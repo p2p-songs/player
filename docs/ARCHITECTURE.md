@@ -32,7 +32,7 @@ question we're not asking.
 | Stremio principle | Keep? | Web-only music reasoning |
 |---|---|---|
 | UI-agnostic, headless-testable engine | **Keep** | Still hugely valuable: the queue/playback/resolution logic must be testable without a browser or a real addon, and swappable under any UI. We enforce this as an internal boundary (§8), not a Rust FFI boundary. |
-| Local-first state, no mandatory account | **Keep** | Library, playlists, installed addons, settings all live client-side. Matches Stremio and suits a personal-use tool. |
+| Local-first state, with **optional** account sync | **Keep (hybrid)** | Library, playlists, installed addons, settings live client-side and work fully logged-out; logging in backs them up and syncs across devices via a self-hosted backend (§6b). This is Stremio's actual model — local-first + optional account — not pure local-only. |
 | Predictable, unidirectional state | **Keep the property, drop the mechanism** | We get this from an explicit state machine *scoped to playback* (§4) + a normal reactive store, not from one hand-rolled global `Msg/Effect` runtime. |
 | Addon protocol client (fetch manifest/catalog/meta/stream/lyrics) | **Keep** | This is the whole point of the system. But on web, HTTP caching/dedup/retry/stale-while-revalidate is a *solved problem* (§6) — Stremio hand-rolled it in Rust because Rust had no TanStack Query. |
 | Elm `Msg → Effects → Model` as the global architecture | **Drop** | Ceremony without payoff for a single-target TS app. Replaced by layered concerns (§3). |
@@ -396,7 +396,9 @@ persist:
   query persistence is ever added for offline metadata, `/stream` responses
   are excluded.
 
-No server, no account; everything is local to the device.
+Logged out, everything is local to the device (Dexie). Logged in, the durable
+state above also syncs to the user's own backend — see §6b. Resolved media
+(below) is memory-only either way and never syncs.
 
 ### 6a. Credential handling for configured addons
 
@@ -452,16 +454,98 @@ Handling rules (implementation requirements, auditable):
   *responses* it's allowed to cache (metadata/artwork) may be cached, never the
   request URL as a cache key in a way that persists the secret. **Tested:** an
   automated test asserts configured URLs never appear in any SW/HTTP cache.
-- **Deletable / rotatable:** removing an addon purges its stored URL; there's a
-  path to re-paste an updated URL (rotated key).
-- **Local-only:** never synced anywhere (consistent with the no-account model).
+- **Deletable / rotatable:** removing an addon purges its stored URL (locally
+  and, if synced, from the backend); there's a path to re-paste an updated URL
+  (rotated key).
+- **Sync boundary:** when logged out, the configured URL never leaves the
+  device. When logged in, it *is* synced to the user's own backend — see §6b,
+  which owns the rules for that. Everything above (no logging/export, redaction,
+  no SW cache, no remote UI code) still applies on the client regardless of
+  login state.
 
-*Future option (not v1):* an opaque config identifier — the addon stores the
-real config server-side keyed by a random ID, and the URL carries only the ID.
-Rejected for v1 because it makes the addon **stateful** and moves the user's
-debrid key onto the addon operator's server, which is a *worse* posture for a
-"your own credentials, your own device" tool than keeping the key client-side
-and handling it as a secret.
+---
+
+### 6b. Accounts & sync (optional, self-hosted)
+
+**This section reverses the original "no server, local-only" assumption.** The
+requirement: a user can **log in, add their addons once, and have their
+listening state persist across sessions and devices.** The model stays
+**local-first** — the app works fully logged-out against Dexie (§6) — but login
+adds an **optional** account that backs up and syncs state. Local-first is the
+foundation; sync is a layer on top, not a gate in front.
+
+**Backend: self-hosted [Supabase](https://supabase.com/docs/guides/self-hosting).**
+Postgres + GoTrue auth + PostgREST/Realtime + Row-Level Security, deployable on
+a rented server via Docker. Chosen because it's a real BaaS (we don't reinvent
+auth/sessions/password-reset — the same "use the solved wheel" logic as TanStack
+Query and Dexie) **and** fully self-hostable and open-source (no Firebase, no
+lock-in). Postgres RLS is the right primitive for per-user data isolation.
+*Intentional caveat:* self-hosting the full Supabase stack is a ~multi-container
+Docker deployment with real ops overhead. If that proves heavier than wanted,
+**[PocketBase](https://pocketbase.io)** (single Go binary, SQLite, built-in
+auth/realtime) is the documented lighter-weight alternative that optimizes
+harder for "rent a box, run one thing" — swap is contained behind the sync
+adapter (below). Starting with Supabase; PocketBase is the escape hatch.
+
+**Auth.** Supabase Auth (email + password to start; magic-link / OAuth are
+later options). The player uses the Supabase client SDK. The **anon key** ships
+in the client; the **service key never does** (server-side only).
+
+**What syncs (per user, RLS-isolated):**
+- Installed addons — including configured URLs (see credential rules below).
+- Library: saved tracks/albums/artists, playlists.
+- Listening state: play history, and last playback position / current queue
+  *identity* (so "resume across sessions/devices" works).
+- Settings, selected theme.
+
+**What never syncs (unchanged from §6):** resolved stream URLs /
+`QueueItem.resolution` and any `/stream` result. These stay memory-only bearer
+links; syncing them would be pointless (they expire) and a needless secret-
+spread. Only queue *identity* (§4a) syncs; resolution re-runs JIT per device.
+
+**Sync engine (client).** Dexie remains the local working store (offline-first);
+a sync adapter reconciles Dexie ⇄ backend. v1 conflict resolution is
+**last-writer-wins per record** using an `updatedAt` timestamp + monotonic
+revision; pull on login/focus + push on change (Supabase Realtime for live
+push is a later upgrade). **Playlists** are the one structure where LWW-per-row
+can lose a concurrent edit — modeled at the playlist-item grain (add/remove/
+reorder as row ops), not whole-playlist LWW, to reduce that; a CRDT is the
+noted future upgrade if concurrent multi-device editing becomes real. The whole
+adapter is one seam, so the backend (Supabase vs PocketBase) and the conflict
+strategy are both swappable.
+
+**Credential handling under sync — the consequential decision.** Configured
+addon URLs contain the user's debrid key. The chosen model (matching Stremio's
+actual behavior) is **server-readable, not zero-knowledge**: the backend can
+read the configured URL in order to store/sync it. This is a *deliberate
+reversal* of the earlier "never synced" invariant, accepted for the UX of
+"add your addons once and they follow you." It is made responsible by:
+
+- **Self-hosting is the intended deployment.** The defensibility rests on this:
+  it's the **user's own key on the user's own server.** Renting a box and
+  running your own backend is the model — like self-hosting Vaultwarden/
+  Nextcloud. In that shape, "the server can read my debrid key" is "my server
+  can read my key," which is fine.
+- **Encryption at rest + TLS in transit + RLS.** Even server-readable, the
+  secret is not left as plaintext-at-rest: the config column is encrypted at
+  rest (server holds the key — this is *not* zero-knowledge, per the decision,
+  but a stolen DB backup ≠ mass key leak). TLS everywhere (Supabase enforces
+  HTTPS). Postgres RLS ensures a user can only ever read their own rows.
+- **Loud multi-tenant caveat.** If someone runs a **public, multi-tenant**
+  instance for other people, they become custodian of many users' debrid
+  credentials — a real breach liability and a shift from "neutral tool" toward
+  "operator." That is a materially different posture from self-hosting for
+  yourself/your household, and anyone doing it must know it. The project's
+  supported/recommended model is self-hosted; a hosted multi-tenant service is
+  explicitly *not* something we bless.
+- **Client rules unchanged.** Everything in §6a about the *client* not leaking
+  the secret (no logging/export/telemetry, redaction, no SW cache, no remote UI
+  code, threat model) still holds regardless of sync.
+
+*(The zero-knowledge / opaque-identifier alternatives were considered and set
+aside in favor of the server-readable model for its simpler recovery UX —
+password reset "just works" — and because self-hosting already addresses the
+main objection.)*
 
 ---
 
@@ -695,6 +779,7 @@ locally.
 | **P-4** | Persistence + data layer: Dexie (library, playlists, installed addons, settings, history); catalog fan-out/merge across installed addons. | P-3 |
 | **P-5** | UI: search/browse, artist/album, now-playing, queue, library, addon manager (install by manifest URL). Build the **theming seam** here — headless viewmodels + typed theme contract + token layer — and ship **one** reference theme against it (§7a), so further themes are drop-ins. | P-2, P-3, P-4 |
 | **P-6** | PWA polish: service worker, installability, offline metadata/artwork, background-audio hardening. | P-5 |
+| **P-7** | Accounts & sync (§6b): self-hosted Supabase (auth + Postgres + RLS); sync adapter (Dexie ⇄ backend, LWW per record); login is optional and additive over the local-first app. Lives in the `backend` repo + a client sync module. Exit: log in on device A, add a configured addon + a playlist, log in on device B and see both; resolved URLs never leave as anything but memory-only; RLS-verified isolation. | P-4 (durable local state exists) |
 
 Cross-repo note: **P-1 and P-2 have no external dependency** and can start
 immediately. P-3 onward needs `addon-sdk` and at least `stream-legal` /
@@ -722,10 +807,18 @@ P-1/P-2).
 - **No remote UI code (§6a/§7a):** themes/plugins are first-party bundled code
   only; never fetch/`eval` UI code at runtime — it would run in the origin that
   holds the credential.
-- **Resolved media is memory-only (§6):** resolved stream URLs /
-  `QueueItem.resolution` and any `/stream` result are never persisted; on
-  hydration every queue item is forced to `resolution: idle` and re-resolved
-  JIT. Persisting bearer stream links is an anti-pattern — flag it.
+- **Sync is optional and self-hosted; the secret is server-readable by design
+  (§6b):** logged out, configured URLs never leave the device; logged in, they
+  sync to the *user's own* backend (server-readable, not zero-knowledge — a
+  deliberate reversal of the earlier "never synced" rule), protected by
+  encryption-at-rest + TLS + Postgres RLS. Login is never mandatory. A public
+  multi-tenant deployment (operator custody of many users' keys) is explicitly
+  not blessed. The service key never ships to the client.
+- **Resolved media is memory-only and never syncs (§6/§6b):** resolved stream
+  URLs / `QueueItem.resolution` and any `/stream` result are never persisted
+  *or synced*; on hydration every queue item is forced to `resolution: idle`
+  and re-resolved JIT. Persisting/syncing bearer stream links is an
+  anti-pattern — flag it.
 - **`/stream` is a command, not a cached query (§5a):** it never runs under the
   generic TanStack Query retry/SWR/focus-refetch policy — that would repeat
   credentialed, rate-limited, possibly state-changing debrid work. Metadata

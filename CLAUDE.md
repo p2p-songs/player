@@ -1,30 +1,39 @@
 # CLAUDE.md — player
 
 ## Scope
-The p2p-songs player: the client app plus `music-core`, an Elm-style state
-machine (`Msg -> Effects -> Model`) modeled on `stremio-core`'s runtime.
-Owns addon collection, aggregated catalog/search, library, and player
-state. Talks to addons only over the HTTP+JSON protocol defined in the
-plan — never anything addon-specific.
+The p2p-songs player: a web-only client app plus a headless core engine
+(queue model + playback state machine + resolution/prefetch scheduler +
+addon client). Owns addon collection, aggregated catalog/search, library,
+and playback. Talks to addons only over the HTTP+JSON protocol — never
+anything addon-specific.
 
-Full architecture: [`p2p-songs/.github` — `docs/IMPLEMENTATION_PLAN.md`](https://github.com/p2p-songs/.github/blob/main/docs/IMPLEMENTATION_PLAN.md), §1, §5, §6, §7, §10 (Phases 4-5, and stretch Phase 6).
+**Architecture is specified in [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)
+in this repo — read it first.** It is a deliberate, web-native design, NOT a
+port of stremio-core: no Elm/Rust, a scoped playback state machine (XState
+or reducer) for predictable state, TanStack Query for addon HTTP, Dexie for
+the library, Zustand for session state, dual-`<audio>` crossfade, MediaSession
++ PWA. It supersedes the "Elm-style `music-core`" language in the master plan.
 
-## Invariants this repo must hold (see `.github`'s `docs/REVIEW_CHECKLIST.md` §1, §7, §8)
+Master plan (protocol/addons/legal context, unchanged): [`p2p-songs/.github` — `docs/IMPLEMENTATION_PLAN.md`](https://github.com/p2p-songs/.github/blob/main/docs/IMPLEMENTATION_PLAN.md).
+
+## Invariants this repo must hold (see `.github`'s `docs/REVIEW_CHECKLIST.md` §1, §7, §8 and `docs/ARCHITECTURE.md` §11)
 - Never bundle, default-install, or hardcode any specific stream addon
   (including `stream-debrid`). Addon installation is exclusively "user
   pastes a manifest URL." This is what keeps this repo as neutral as
   Stremio-the-app.
 - No debrid credentials, indexer config, or other addon-specific secrets
-  ever live here — that config lives only inside an addon's own
-  `/configure`-encoded URL, never in player state or committed files.
-- `music-core` stays plain TypeScript, Elm-style. A Rust/WASM port is an
-  explicit stretch phase (Phase 6) — don't reach for it before Phases 1-5
-  elsewhere in the project are otherwise done; that sequencing was
-  deliberate, not an oversight.
+  ever live here — the player only ever receives already-resolved URLs (or
+  a `ytId`).
+- `src/core` imports nothing from `src/ui` (lint-enforced). The engine
+  stays headless-testable.
+- Stream resolution is just-in-time for the next 1-2 queue items, never
+  whole-queue-upfront (debrid links expire; don't hammer debrid APIs).
 
 ## Status
-Scaffolding only (this file + README). No `music-core` or player-app code
-yet. Next: Phase 4 (`music-core`, headless), then Phase 5 (player app UI).
+Scaffolding + architecture plan only. No engine or UI code yet. Build order
+is in [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) §10: P-1 headless
+engine (fakes) → P-2 audio subsystem → P-3 addon client → P-4 persistence →
+P-5 UI → P-6 PWA. P-1/P-2 have no cross-repo dependency and can start now.
 
 ## Being audited?
 If you're the adversarial reviewer, not the implementer: start at

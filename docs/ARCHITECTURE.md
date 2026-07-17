@@ -123,35 +123,55 @@ Fully unit-testable headless with a fake audio backend and a fake resolver.
 The queue is the heart of the player. It is an explicit data structure, not
 an array in a component.
 
+**Identity is by stable ID, never by array index.** An early draft used a
+numeric `cursor` into `items` plus a separate `order` permutation and left
+"advance" semantics undefined — that made position ambiguous the moment you
+shuffle, insert, or remove (and made "up next" wrong under shuffle). The queue
+is modeled on **stable `QueueItemId`s** and two ID sequences:
+
 ```ts
 type RepeatMode = "off" | "one" | "all";
+type QueueItemId = string;    // stable, unique per queue entry (same track can appear twice)
 
 interface QueueItem {
-  id: string;                 // stable queue-item id (not the track id — same track can appear twice)
+  id: QueueItemId;
   track: TrackRef;            // { mbid, title, artist, album, durationMs, artwork } — persistable
-  resolution: ResolutionState; // idle | resolving | resolved(streams, chosenIdx, url, expiresAt) | failed
-                              // MEMORY-ONLY: never persisted; forced to `idle` on hydration (§6)
+  resolution: ResolutionState; // idle | resolving | resolved(streams, chosenIdx, url, expiresAt?) | failed
+                              // MEMORY-ONLY: never persisted; forced to `idle` on hydration (§6).
+                              // `expiresAt` is optional and only ever a hint (§5) — the protocol
+                              // may not supply it; correctness never depends on it.
 }
 
 interface Queue {
-  items: QueueItem[];         // the canonical order
-  cursor: number;             // index of the current item
-  order: number[];            // playback order over items — identity when shuffle off,
-                              // a stored permutation when shuffle on (so toggling shuffle
-                              // off restores the original order non-destructively)
+  itemsById: Record<QueueItemId, QueueItem>;
+  canonicalOrder: QueueItemId[]; // the order the user built (playlist/album order); stable
+  playOrder: QueueItemId[];      // the order playback actually follows — equals canonicalOrder
+                                //   when shuffle is off; a derived shuffled sequence when on
+  currentItemId: QueueItemId | null; // position IS an id, never an index
   repeat: RepeatMode;
-  autoplaySeed?: RadioSeed;   // when cursor nears the end, extend from this (similar-artist / addon radio)
+  shuffle: boolean;
+  autoplaySeed?: RadioSeed;   // when the current item nears the end of playOrder, extend from this
 }
 ```
 
-Design rules:
-- **Non-destructive shuffle:** never reorder `items`; shuffle is a permutation
-  in `order`. Toggling shuffle is reversible and never loses the queue.
-- **Same track twice is legal** (hence per-item `id`) — playlists and radio
+Design rules (mutation invariants — define these before writing queue code):
+- **Position is `currentItemId`.** "Next"/"prev" step along **`playOrder`**,
+  not `canonicalOrder`. **"Up next" reads from `playOrder`** after the current
+  id — this is the fix for the shuffle bug in the earlier model.
+- **Non-destructive shuffle:** toggling shuffle only recomputes `playOrder`
+  (turning it on derives a shuffle of the remaining ids, keeping `currentItemId`
+  first; turning it off restores `playOrder = canonicalOrder`). `canonicalOrder`
+  and `itemsById` are never mutated by shuffling.
+- **Insert/remove/reorder** operate on ids and must keep `canonicalOrder`,
+  `playOrder`, and `itemsById` consistent (removing an id removes it from both
+  sequences; if it was current, advance `currentItemId` along `playOrder`
+  first). Never let a stale index outlive the mutation.
+- **Same track twice is legal** (distinct `QueueItemId`s) — playlists and radio
   routinely repeat tracks.
-- **Autoplay/radio** extends the queue when the cursor approaches the end,
-  from a seed (a track/artist → "similar" via a catalog addon or ListenBrainz).
-  The queue is potentially infinite; the model must never assume it's finite.
+- **Autoplay/radio** appends ids when the current item nears the end of
+  `playOrder`, from a seed (a track/artist → "similar" via a catalog addon or
+  ListenBrainz). The queue is potentially infinite; the model must never assume
+  it's finite (see §4b for how this interacts with the failure circuit-breaker).
 
 ### 4b. Playback state machine
 
@@ -172,11 +192,47 @@ idle → resolving → buffering → playing ⇄ paused │
 
 - Entering `resolving` triggers the scheduler (§5) for the *current* item if
   not already resolved (usually it is, thanks to prefetch).
-- `failed` doesn't halt the queue: try the next `stream` in the item's
-  resolved list (a stream addon returns several — qualities/sources); if all
-  fail, skip-ahead to the next item. A dead link must never freeze playback.
+- `failed` for a single item: try the next `stream` in the item's resolved
+  list (a stream addon returns several — qualities/sources); if all fail,
+  skip-ahead to the next item. But skip-ahead is **bounded** — see
+  "Failure termination" below; it does not loop forever.
 - Seeking is handled by the audio element natively (HTTP `Range`), the
   machine just tracks position for UI/MediaSession/scrobble.
+
+**Stale-completion safety (identity, not just abort).** Async resolves/loads
+race with skips and reorders. AbortController is used to cancel superseded
+work, but abort races with completion and not all work honors it — so
+**cancellation is an optimization; identity validation is the correctness
+mechanism.** Every resolve/load attempt is stamped with an immutable
+`{ sessionEpoch, queueItemId, attemptId }`:
+
+- `sessionEpoch` bumps whenever the queue is replaced or the current item
+  changes; `queueItemId` ties the work to a specific queue entry (§4a);
+  `attemptId` distinguishes retries of the same item.
+- Every `resolved` / `failed` event carries its stamp, and the reducer
+  **ignores any event whose stamp doesn't match current state** (wrong epoch,
+  wrong current item, or a superseded attempt). A resolve that completes after
+  you've skipped away simply gets dropped; it can never overwrite the current
+  item's resolution, preload the wrong URL, or push the FSM to `buffering` for
+  a track no longer selected.
+- Test matrix (required): resolve-after-skip, failure-after-success,
+  reorder-during-resolve, and double-completion.
+
+**Failure termination (the queue must be able to stop).** "Never freeze" does
+not mean "skip forever." A provider outage must not become an unbounded
+resolve→fail→skip loop that hammers debrid APIs and grows the radio queue while
+the UI looks busy. Rules:
+
+- Track a **failure sweep** per playback session. If every *eligible* item has
+  failed once with no successful play in between — or after a bounded
+  consecutive-failure threshold — stop and surface an **actionable terminal
+  state** (`error`), not silent spinning.
+- The breaker **resets** on a successful play or an explicit user action
+  (manual pick, retry).
+- **Provider-wide failures** (an addon globally unreachable / auth-failing)
+  get exponential backoff, not per-track retries.
+- **`repeat: "all"` and autoplay/radio must not bypass the bound** — a wrap or
+  an appended radio batch of unresolvable items still counts against the sweep.
 
 **Decision: a hand-rolled discriminated-union finite state machine** (state
 is a union like `{ status: "playing"; … } | { status: "resolving"; … }`;
@@ -256,25 +312,59 @@ skip and expect *instant* sound.
 1. **Trigger:** when the current track starts (and again at a "~30 s
    remaining" mark as a safety net), asynchronously resolve the **next 1–2
    queue items** — call the stream addon(s), pick the best stream, get the
-   playable URL, store it on the `QueueItem` with an `expiresAt`.
+   playable URL, store it on the `QueueItem` (with the stamp from §4b).
 2. **Preload:** hand the resolved next URL to the idle audio element so the
    browser buffers its opening while the current track plays.
 3. **On advance:** the next item is already `resolved` + buffered → playback
    starts with no perceptible gap.
-4. **TTL / expiry:** debrid links can expire. **Never resolve the whole queue
-   upfront.** Resolve JIT for the near horizon only; if a resolved URL is
-   past (or near) `expiresAt` when we reach it, re-resolve. This is a hard
-   difference from a "resolve once" video player.
+4. **Freshness — re-resolve-on-failure is the guarantee; expiry is only a
+   hint.** Debrid links can expire, but **the protocol does not reliably tell
+   the player when** (see §5a). So the *correctness* mechanism is: if a
+   preloaded/played URL fails to load (dead/expired/auth), the machine walks
+   the stream fallback list and, failing that, **re-resolves the item fresh**.
+   *Additionally*, when the addon supplies an optional `expiresAt`/`maxAge`
+   hint (§5a), the scheduler uses it to proactively avoid preloading a URL that
+   would die before use, and re-resolves early. Never resolve the whole queue
+   upfront — JIT, near-horizon only. Correctness must not depend on the hint
+   being present or honest.
 5. **Fallback:** a stream addon returns *several* streams per track. The
    scheduler keeps the ranked list; on load failure the machine walks down
-   it, then skips-ahead. Resolution failures degrade, never halt.
-6. **Cancellation:** if the user reorders/skips, in-flight resolutions for
-   items no longer near the cursor are cancelled (AbortController) to avoid
-   wasting debrid API calls and hitting rate limits.
+   it, then re-resolves, then skips-ahead — within the bounded failure sweep
+   (§4b). Resolution failures degrade, never loop forever.
+6. **Cancellation + identity:** if the user reorders/skips, in-flight
+   resolutions for items no longer near the current id are cancelled
+   (AbortController) to save debrid calls — but cancellation is best-effort;
+   the reducer's **stamp check (§4b) is what actually prevents a late result
+   from committing.**
+
+### 5a. `/stream` is a command, not a cacheable query
+
+Resolving a stream is **not** a passive GET. A `stream-debrid` `/stream` call
+is credentialed, rate-limited, and may be **state-changing** (the plan permits
+it to trigger a debrid-side download and poll). So `/stream` must **not** run
+under the generic TanStack Query policy used for metadata (§6) — automatic
+`retry`, `refetchOnWindowFocus`, `refetchOnReconnect`, or stale-revalidation
+would silently repeat expensive/rate-limited work (merely focusing a tab could
+burn debrid quota or spawn a duplicate torrent job, and two refetches could
+race two different bearer URLs).
+
+The player therefore splits addon calls into two planes:
+
+- **Metadata query plane** — `manifest` / `catalog` / `meta` / `lyrics`:
+  ordinary TanStack Query (dedupe, cache, SWR, retry). These are safe,
+  idempotent reads.
+- **Resolution command plane** — `/stream`: a **scheduler-owned command**, not
+  a cache entry. Explicit in-flight **deduplication by operation id**,
+  `retry: false` (or a narrowly-classified retry only on clearly-transient
+  network errors), `refetchOnWindowFocus: false`, `refetchOnReconnect: false`,
+  **memory-only** results, and the §4b stamp on every attempt. If TanStack
+  Query is still used as the raw transport, `/stream` keys get a **separate,
+  immutable policy factory** that hard-disables all of the above — it is never
+  allowed to inherit the metadata defaults.
 
 This component is pure logic over the addon client + queue, so it's
 **fully unit-testable** with a fake resolver that simulates latency,
-expiry, and failure.
+expiry, failure, and duplicate/late completion.
 
 ---
 
@@ -282,19 +372,22 @@ expiry, and failure.
 
 | Concern | Tool | Why (web-native reasoning) |
 |---|---|---|
-| Addon HTTP responses (catalog, meta, search, stream, lyrics) | **TanStack Query** | Caching, request dedup, retries, stale-while-revalidate, parallel fan-out across installed addons, cancellation — all the machinery stremio-core hand-writes in Rust, already solved and battle-tested on web. Merge/dedup addon results by MBID on top. |
+| Metadata reads: `manifest` / `catalog` / `meta` / `search` / `lyrics` | **TanStack Query** (normal policy) | Caching, dedup, retries, SWR, parallel fan-out across installed addons, cancellation — the machinery stremio-core hand-writes in Rust, already solved on web. Merge/dedup by MBID on top. |
+| Stream resolution: `/stream` | **Scheduler-owned command, NOT the generic query policy (§5a)** | `/stream` is credentialed, rate-limited, possibly state-changing (debrid download/poll). Runs with in-flight dedup by operation id, `retry: false`, no focus/reconnect refetch, memory-only results, §4b stamping. Never inherits metadata query defaults. |
 | Durable library: saved tracks/albums/artists, playlists, play history | **Dexie (IndexedDB)** | A music library grows to thousands of items and needs **indexed local search/filter/sort** — that wants a queryable store, not a JSON blob. (`idb` is the lighter fallback if v1 library stays small; Dexie recommended because local library search is a core music-app expectation.) |
 | Installed addon URLs + cached manifests | **Dexie**, in a dedicated **secret-bearing store** (§6a) | A *configured* addon URL contains the addon's config, which for `stream-debrid` includes a debrid API key — so this store holds credential material and is handled accordingly (§6a). |
 | Session / UI state (current view, queue snapshot, volume, mini-player) | **Zustand** | Tiny, framework-light, subscribe from React or from the engine. Queue + playback *snapshots* are mirrored here for the UI to render; the engine remains the source of truth. |
 
 Persistence policy — **persist identity, not resolved media.** A thin adapter
 debounces durable state into Dexie so a reload restores your session, but it
-persists **only**: library, playlists, installed addon URLs, settings, and
-the queue's *identity/order/cursor/track-metadata*. It does **not** persist:
+persists **only**: library, playlists, installed addon URLs, settings, and the
+queue's *identity* — `itemsById` (track metadata), `canonicalOrder`,
+`playOrder`, `currentItemId`, `repeat`, `shuffle` (§4a). It does **not**
+persist:
 
 - **Resolved stream URLs / `QueueItem.resolution`.** These are memory-only.
-  Direct debrid/CDN links are bearer URLs with an `expiresAt`; persisting them
-  would restore stale, secret-bearing links that must be re-resolved anyway.
+  Direct debrid/CDN links are bearer URLs that expire; persisting them would
+  restore stale, secret-bearing links that must be re-resolved anyway.
   **On hydration, every restored `QueueItem` is forced to `resolution: idle`,**
   so the JIT scheduler (§5) re-resolves the current/next items fresh. This
   also means a reload never plays from a persisted expired link.
@@ -321,10 +414,35 @@ URL the user pasted — it stays on the user's own device and is sent only to
 the addon they configured. That's a fine trust model; it just has to be
 handled as the secret it is.)
 
-Handling rules (all of these are implementation requirements, auditable):
+**The real threat is same-origin script, not accidental cross-store reads.** A
+separate Dexie object store is *organization, not a security boundary* — any
+same-origin JavaScript (or a successful XSS) can read the raw key-bearing URL
+regardless of which store it's in. So this is called a **secret-bearing
+store**, deliberately **not** a "keychain" (that word implies an OS-level
+security boundary the browser doesn't give us here). Client-side encryption
+without a user-held key is **not** a solution and won't be presented as one —
+it doesn't stop same-origin code, which already runs with the key's privileges.
 
-- **Stored as credential material:** configured addon URLs live in their own
-  Dexie store, conceptually the "keychain," separate from non-sensitive state.
+Because the realistic exfiltration path is injected/malicious same-origin code
+— and this app deliberately runs **themeable UI** (§7a) and PWA/analytics code
+in that same origin — the v1 **browser threat model** is an explicit
+requirement, not a nicety:
+
+- **Strict CSP** with no `unsafe-inline` / `unsafe-eval`; **Trusted Types**
+  where supported.
+- **No remote theme or plugin code, ever.** Themes (§7a) are first-party,
+  bundled, reviewed code — never fetched/eval'd from a URL at runtime. (This is
+  now a hard invariant on the theming feature, §7a/§11.)
+- **Dependency + telemetry discipline:** minimize third-party runtime deps in
+  the app origin; no analytics/telemetry that could capture URLs or state.
+- **Redacted error boundaries:** crash/error paths must not serialize
+  configured URLs into messages, stack frames, or reports.
+
+Handling rules (implementation requirements, auditable):
+
+- **Stored as credential material** in the dedicated secret-bearing store,
+  separate from non-sensitive state (organization, on top of — not instead of —
+  the threat model above).
 - **Never logged or exported in the clear:** never written to `console`, error
   telemetry, diagnostics, analytics, or any bug-report/export blob. Anywhere a
   URL is shown or copyable in the UI, the config segment is **redacted** (show
@@ -332,7 +450,8 @@ Handling rules (all of these are implementation requirements, auditable):
 - **Never cached by the service worker / HTTP cache.** The PWA service worker
   (§7) must exclude configured-addon requests from any cache; only the addon's
   *responses* it's allowed to cache (metadata/artwork) may be cached, never the
-  request URL as a cache key in a way that persists the secret.
+  request URL as a cache key in a way that persists the secret. **Tested:** an
+  automated test asserts configured URLs never appear in any SW/HTTP cache.
 - **Deletable / rotatable:** removing an addon purges its stored URL; there's a
   path to re-paste an updated URL (rotated key).
 - **Local-only:** never synced anywhere (consistent with the no-account model).
@@ -427,10 +546,18 @@ phase (P-5), but **ship exactly one theme first**, authored against the
 contract. That proves the seam and makes theme #2 a genuine drop-in, without
 paying up front to build three UIs. Add more themes when they're actually
 wanted. A base theme plus themes that override only a few surfaces (inheriting
-the rest) keeps the per-theme cost down. *(Longer-term, because a theme is
-just a contract implementation, themes could even be distributed separately —
-a pluggable UI mirroring the pluggable-source addon philosophy — but that's a
-someday, not a v1 requirement.)*
+the rest) keeps the per-theme cost down.
+
+**Security constraint (hard invariant): themes are first-party, bundled code —
+never remote code.** Themes run in the same origin as the credential store
+(§6a), so a theme fetched or `eval`'d from a URL at runtime could exfiltrate a
+configured addon's debrid key. Themes must be reviewed, in-repo, build-time
+code only. This is why the "distribute themes separately, like addons" idea
+below is a **non-goal for v1**: pluggable *sources* (addons) are safe because
+they're separate network services the player only exchanges data with;
+pluggable *UI* would be foreign code in the player's own origin, which is a
+credential-theft vector. *(If external themes are ever revisited, they'd need a
+real sandbox — separate origin / iframe / worker — not just the contract.)*
 
 ---
 
@@ -504,7 +631,7 @@ engine already exposes — no engine change is needed to build an ambitious UI:
 | A rich now-playing / queue UI wants… | …reads from (already in the engine) |
 |---|---|
 | Track title / artist / album / year / artwork | current `QueueItem.track` (from `musicmeta`) |
-| "Up next" list | `Queue.items` after the cursor (§4a) |
+| "Up next" list | `Queue.playOrder` after `currentItemId` (§4a) — follows *play* order, so it's correct under shuffle |
 | "Autoplay radio (based on this album/artist)" section | `Queue.autoplaySeed` + radio extension (§4a) |
 | Queue ⇄ Lyrics tabs | queue from engine; lyrics from the `lyrics` addon resource |
 | Progress bar + elapsed/total time | playback machine position + `track.durationMs` (§4b) |
@@ -562,9 +689,9 @@ locally.
 | Phase | Deliverable | Depends on |
 |---|---|---|
 | **P-0** | This architecture doc; confirm §9 decisions | — |
-| **P-1** | Headless engine skeleton: queue model + playback machine + scheduler, driven by a **fake** audio backend and **fake** resolver. Full unit tests of transitions, shuffle/repeat, prefetch, expiry, fallback. **No browser, no addons.** | — |
+| **P-1** | Headless engine skeleton: queue model (stable-ID identity, §4a) + playback machine + scheduler, driven by a **fake** audio backend and **fake** resolver. Unit tests of transitions, shuffle/repeat, prefetch, fallback, **the §4b async-race matrix** (resolve-after-skip, failure-after-success, reorder-during-resolve, double-completion) and the **failure circuit-breaker** (§4b). **No browser, no addons.** | — |
 | **P-2** | Real audio subsystem: dual `<audio>` + volume-automation crossfade + MediaSession, wired to the machine, playing **hardcoded direct URLs**. | P-1 |
-| **P-3** | Real addon client + scheduler integration: manifest/catalog/meta/stream/lyrics fetch via TanStack Query; JIT resolve + TTL + fallback against a real stream addon. | P-1, `addon-sdk` + `stream-legal` existing |
+| **P-3** | Real addon client + scheduler integration: metadata via TanStack Query (normal policy); **`/stream` via the resolution command plane** (§5a — dedup, no retry/refetch, memory-only, stamped); JIT resolve + re-resolve-on-failure + optional expiry hint (§5a) against a real stream addon. | P-1, `addon-sdk` + `stream-legal` existing |
 | **P-4** | Persistence + data layer: Dexie (library, playlists, installed addons, settings, history); catalog fan-out/merge across installed addons. | P-3 |
 | **P-5** | UI: search/browse, artist/album, now-playing, queue, library, addon manager (install by manifest URL). Build the **theming seam** here — headless viewmodels + typed theme contract + token layer — and ship **one** reference theme against it (§7a), so further themes are drop-ins. | P-2, P-3, P-4 |
 | **P-6** | PWA polish: service worker, installability, offline metadata/artwork, background-audio hardening. | P-5 |
@@ -585,16 +712,37 @@ P-1/P-2).
 - **Neutrality:** still no bundled/default-installed stream addon; addons are
   added only by user-pasted manifest URL. The player never has its *own*
   debrid account and never ships credentials. (Unchanged from master plan §3.)
-- **Configured addon URLs are secrets, and the player handles them as such
-  (§6a):** the player *does* hold the user's key inside the configured
-  manifest URL — that's unavoidable if it's to call the addon — so it stores
-  that URL as credential material, never logs/exports/telemeters it, redacts
-  the config segment in the UI, and excludes it from service-worker caching.
-  (This **corrects** the earlier false "no secrets in the player" claim.)
+- **Configured addon URLs are secrets, handled under a real browser threat
+  model (§6a):** the player *does* hold the user's key inside the configured
+  manifest URL — unavoidable if it's to call the addon — so it's stored in a
+  secret-bearing store (not a "keychain" — same-origin script can read it),
+  never logged/exported/telemetered, redacted in UI, excluded from SW cache,
+  and protected by strict CSP + no-remote-code. (Corrects the earlier false
+  "no secrets in the player" claim.)
+- **No remote UI code (§6a/§7a):** themes/plugins are first-party bundled code
+  only; never fetch/`eval` UI code at runtime — it would run in the origin that
+  holds the credential.
 - **Resolved media is memory-only (§6):** resolved stream URLs /
-  `QueueItem.resolution` and the TanStack Query `/stream` cache are never
-  persisted; on hydration every queue item is forced to `resolution: idle` and
-  re-resolved JIT. Persisting bearer stream links is an anti-pattern — flag it.
+  `QueueItem.resolution` and any `/stream` result are never persisted; on
+  hydration every queue item is forced to `resolution: idle` and re-resolved
+  JIT. Persisting bearer stream links is an anti-pattern — flag it.
+- **`/stream` is a command, not a cached query (§5a):** it never runs under the
+  generic TanStack Query retry/SWR/focus-refetch policy — that would repeat
+  credentialed, rate-limited, possibly state-changing debrid work. Metadata
+  and resolution are separate planes.
+- **Stream freshness = re-resolve-on-failure (§5/§5a):** correctness never
+  depends on a protocol `expiresAt`; that field is an optional optimization
+  hint. A dead link is recovered by falling down the stream list / re-resolving.
+- **Async results commit by identity, not just abort (§4b):** every
+  resolve/load is stamped `{sessionEpoch, queueItemId, attemptId}`; the reducer
+  drops any completion whose stamp doesn't match current state. Relying on
+  AbortController alone is a defect.
+- **Queue identity is by stable ID (§4a):** `currentItemId` + `playOrder`,
+  never a mutable array index; "up next" reads from `playOrder`. Index-as-
+  identity under shuffle/insert/remove is a defect.
+- **Failure is bounded (§4b):** skip-ahead runs inside a per-session failure
+  sweep with a terminal error state and provider backoff; `repeat: "all"` /
+  autoplay must not create an unbounded fail/skip loop.
 - **Engine purity:** `src/core` must not import from `src/ui` — enforced by
   lint. The engine stays headless-testable.
 - **Resolution is JIT, never whole-queue:** resolving the entire queue upfront

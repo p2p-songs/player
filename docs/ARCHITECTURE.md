@@ -179,18 +179,17 @@ idle → resolving → buffering → playing ⇄ paused │
 
 **Decision: a hand-rolled discriminated-union finite state machine** (state
 is a union like `{ status: "playing"; … } | { status: "resolving"; … }`;
-transitions are a pure `(state, event) => state` function). Zero runtime
-deps, and — critically — legible to anyone reading it cold, including the
-adversarial auditor, with no library idioms to learn first. It still gets the
-"impossible states impossible" benefit, because the state is a discriminated
-union and transitions are total, not a bag of boolean flags. The genuinely
-hard async (resolve → buffer with cancellation/TTL/fallback) lives in the
-**scheduler** (§5), not here — so the machine itself is a small, mostly
-synchronous lifecycle FSM reacting to events (`ended`, `error`, `skip`,
-`resolved`), which is exactly a reducer's sweet spot. **Escape hatch:** it's
-isolated behind `core/playback`, so if the statechart ever grows deeply
-nested, swapping in [XState](https://stately.ai/) is a contained change. See
-§9 for how this decision was reasoned.
+transitions are a pure `(state, event) => state` function). It gets the
+"impossible states impossible" benefit because the state is a discriminated
+union and transitions are total, not a bag of boolean flags — with zero
+runtime deps. The genuinely hard async (resolve → buffer with
+cancellation/TTL/fallback) lives in the **scheduler** (§5), not here — so the
+machine itself is a small, mostly synchronous lifecycle FSM reacting to
+events (`ended`, `error`, `skip`, `resolved`), which is exactly a reducer's
+sweet spot; a statechart library would add idioms without adding much value
+at this size. **Escape hatch:** it's isolated behind `core/playback`, so if
+the machine ever grows deeply nested, swapping in
+[XState](https://stately.ai/) is a contained change.
 
 ### 4c. Audio subsystem (`src/core/audio`)
 
@@ -375,12 +374,11 @@ bearing for correctness.
    The earlier lean was XState; on reflection the reducer wins here because
    (a) the hard async — resolution, prefetch, cancellation, TTL, fallback —
    lives in the *scheduler* (§5), so the machine is a small, mostly
-   synchronous lifecycle FSM where a library adds idioms without adding much
-   value; (b) a plain reducer is maximally legible to a cold-reading
-   adversarial auditor, no XState knowledge required; (c) it's isolated
-   behind `core/playback`, so adopting XState later is a contained change if
-   the statechart ever grows. Discriminated-union state + total transition
-   function preserves the impossible-states-impossible guarantee. *(See §4b.)*
+   synchronous lifecycle FSM where a statechart library adds idioms without
+   adding much value; (b) it's isolated behind `core/playback`, so adopting
+   XState later is a contained change if the machine ever grows. Discriminated-
+   union state + total transition function preserves the impossible-states-
+   impossible guarantee. *(See §4b.)*
 2. **Library store → Dexie (decided).** A music library grows to thousands of
    items and needs indexed local search/filter/sort — that wants a queryable
    store, not a JSON blob. `idb` was the "keep v1 tiny" fallback; the cost of

@@ -492,10 +492,15 @@ later options). The player uses the Supabase client SDK. The **anon key** ships
 in the client; the **service key never does** (server-side only).
 
 **What syncs (per user, RLS-isolated):**
-- Installed addons — including configured URLs (see credential rules below).
+- Installed addons — **including configured URLs** (see credential rules below).
+  This is an explicit product decision: not syncing addons would force the user
+  to re-paste every configured addon on each device and after any local-storage
+  clear, which defeats the point of logging in. Syncing the configured URL
+  (which contains the debrid key) is an **accepted, known risk** under the
+  Stremio model — see credential handling below.
 - Library: saved tracks/albums/artists, playlists.
 - Listening state: play history, and last playback position / current queue
-  *identity* (so "resume across sessions/devices" works).
+  *identity* — checkpointed frequently (see "Resume & handoff") so it's fresh.
 - Settings, selected theme.
 
 **What never syncs (unchanged from §6):** resolved stream URLs /
@@ -514,12 +519,42 @@ noted future upgrade if concurrent multi-device editing becomes real. The whole
 adapter is one seam, so the backend (Supabase vs PocketBase) and the conflict
 strategy are both swappable.
 
+**Resume & handoff — be precise about "continue on another device in seconds."**
+Two different features, delivered in two steps:
+
+- **v1 — resume-on-open (the realistic "seconds" experience).** Playback
+  position + current queue identity are **checkpointed** to the backend
+  frequently: on pause, on track change, and on a short interval (~every few
+  seconds) while playing. When you open the app on another device (or after a
+  local-storage clear), it **pulls on login/focus** and offers to resume from
+  the last checkpoint. So: pause on desktop → pick up phone → open app → you're
+  within a few seconds of where you left off. For the common "I paused and moved
+  rooms" case, that's effectively instant. What it is *not* is sub-second, and
+  it needs the app opened/focused on the target device (a background pull isn't
+  guaranteed).
+- **Later — live handoff (Spotify-Connect-style).** Truly seamless transfer
+  *while audio is actively playing* on the other device, pushed in real time,
+  is a **later upgrade** built on Supabase Realtime (live position streaming +
+  a "transfer playback to this device" control). It's deliberately out of v1
+  scope — v1's pull-on-open resume already satisfies "continue your listening
+  across devices"; live handoff is a polish feature, not the baseline.
+
+So the honest answer to "desktop → phone in seconds": **yes for resuming a
+paused/just-left session** (open the app, it's there); **not yet** for live,
+sub-second, still-playing handoff — that's the Realtime upgrade.
+
 **Credential handling under sync — the consequential decision.** Configured
 addon URLs contain the user's debrid key. The chosen model (matching Stremio's
 actual behavior) is **server-readable, not zero-knowledge**: the backend can
-read the configured URL in order to store/sync it. This is a *deliberate
-reversal* of the earlier "never synced" invariant, accepted for the UX of
-"add your addons once and they follow you." It is made responsible by:
+read the configured URL in order to store/sync it.
+
+**This is an explicitly accepted, known risk (product decision).** Syncing the
+configured addon URL means the stored value carries the debrid credential, and
+we are choosing that over the alternatives (re-enter addons per device, or
+zero-knowledge encryption) because forcing re-entry on every device and after
+every local-storage clear defeats the purpose of logging in. **Keep the Stremio
+model.** The risk is *accepted*, not eliminated — the safeguards below make it
+responsible, they don't make the credential un-stored:
 
 - **Self-hosting is the intended deployment.** The defensibility rests on this:
   it's the **user's own key on the user's own server.** Renting a box and

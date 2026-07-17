@@ -177,12 +177,20 @@ idle → resolving → buffering → playing ⇄ paused │
 - Seeking is handled by the audio element natively (HTTP `Range`), the
   machine just tracks position for UI/MediaSession/scrobble.
 
-**Recommendation: model this with [XState](https://stately.ai/).** It makes
-impossible states impossible, is web-native and TS-first, and is
-visualizable/testable — the Elm benefits, none of the Rust cost.
-*Lighter alternative:* a hand-rolled discriminated-union reducer (~150 lines,
-zero deps). Decision flagged in §9; either is fine, XState preferred for the
-async correctness guarantees on the failure/skip edges.
+**Decision: a hand-rolled discriminated-union finite state machine** (state
+is a union like `{ status: "playing"; … } | { status: "resolving"; … }`;
+transitions are a pure `(state, event) => state` function). Zero runtime
+deps, and — critically — legible to anyone reading it cold, including the
+adversarial auditor, with no library idioms to learn first. It still gets the
+"impossible states impossible" benefit, because the state is a discriminated
+union and transitions are total, not a bag of boolean flags. The genuinely
+hard async (resolve → buffer with cancellation/TTL/fallback) lives in the
+**scheduler** (§5), not here — so the machine itself is a small, mostly
+synchronous lifecycle FSM reacting to events (`ended`, `error`, `skip`,
+`resolved`), which is exactly a reducer's sweet spot. **Escape hatch:** it's
+isolated behind `core/playback`, so if the statechart ever grows deeply
+nested, swapping in [XState](https://stately.ai/) is a contained change. See
+§9 for how this decision was reasoned.
 
 ### 4c. Audio subsystem (`src/core/audio`)
 
@@ -310,11 +318,17 @@ player/
 - If a native shell (Tauri) or second UI ever appears, `src/core` promotes to
   a package with a one-line move. We pay that cost only if it's ever real.
 
-**Protocol types sharing:** the addon protocol's TypeScript types (manifest,
-stream object, resource shapes) are needed by both this repo and `addon-sdk`.
-Decision to confirm (§9): publish them from `addon-sdk` as
-`@p2p-songs/protocol` and import here, vs. vendoring a copy. Leaning
-"export from addon-sdk" so there's one source of truth for the wire format.
+**Protocol types sharing — decided:** the addon protocol's TypeScript types
+(manifest, stream object, resource shapes) are the wire contract between
+addons and the player, so they get **one source of truth**, not a copy on
+each side that can silently drift. Canonical home is the **`addon-sdk` repo**
+(the SDK is literally the tool for implementing the protocol, so the contract
+belongs with it), exported as a types-only `@p2p-songs/protocol` package that
+this repo depends on. Mechanics during early churn: consume it as a **pinned
+git dependency** to avoid a publish-on-every-change treadmill while the
+protocol is pre-1.0; promote to a properly published npm / GitHub Packages
+release when the protocol stabilizes at v1. Finalized packaging details land
+in the `addon-sdk` repo's own plan, since that's where the package lives.
 
 ### 8a. The boundary *enables* the UI/UX — it doesn't limit it
 
@@ -355,18 +369,31 @@ bearing for correctness.
 
 ---
 
-## 9. Decisions to confirm before building
+## 9. Decisions
 
-1. **Playback machine: XState vs hand-rolled reducer.** Recommend XState for
-   the async-correctness guarantees on the failure/skip/resolve edges; the
-   reducer is the zero-dep fallback. *(Low regret either way — the machine is
-   isolated behind `core/playback`.)*
-2. **Library store: Dexie vs `idb`.** Recommend Dexie for local library
-   search; `idb` if we want v1 as small as possible. *(Swappable behind
-   `core/persistence`.)*
-3. **Protocol types: shared `@p2p-songs/protocol` package (from addon-sdk)
-   vs vendored copy.** Recommend shared. *(Affects addon-sdk repo too.)*
-4. **Styling system** — deferrable to the UI phase, no architectural impact.
+1. **Playback machine → hand-rolled discriminated-union FSM (decided).**
+   The earlier lean was XState; on reflection the reducer wins here because
+   (a) the hard async — resolution, prefetch, cancellation, TTL, fallback —
+   lives in the *scheduler* (§5), so the machine is a small, mostly
+   synchronous lifecycle FSM where a library adds idioms without adding much
+   value; (b) a plain reducer is maximally legible to a cold-reading
+   adversarial auditor, no XState knowledge required; (c) it's isolated
+   behind `core/playback`, so adopting XState later is a contained change if
+   the statechart ever grows. Discriminated-union state + total transition
+   function preserves the impossible-states-impossible guarantee. *(See §4b.)*
+2. **Library store → Dexie (decided).** A music library grows to thousands of
+   items and needs indexed local search/filter/sort — that wants a queryable
+   store, not a JSON blob. `idb` was the "keep v1 tiny" fallback; the cost of
+   Dexie is low and local library search is a core music-app expectation, so
+   pay it now. *(Swappable behind `core/persistence` if it ever bites.)*
+3. **Protocol types → shared `@p2p-songs/protocol`, single source of truth in
+   the `addon-sdk` repo (decided).** One wire contract, not a per-repo copy
+   that can drift. Consumed here as a pinned git dependency during pre-1.0
+   churn, promoted to a published package at protocol v1. *(See §8; final
+   packaging mechanics are settled in the `addon-sdk` repo plan.)*
+4. **Styling system → deferred to the UI phase (P-5), by design.** No
+   architectural impact; the `core`/`ui` boundary (§8a) means the visual
+   layer is unconstrained and can be chosen — and changed — freely later.
 
 None of these block starting Phase P-1; all are isolated behind the module
 boundaries above.

@@ -279,11 +279,79 @@ queue/library/settings changes into Dexie so a reload restores your session
   real app" property that Stremio gets from being a native shell. It's an
   architectural decision (affects caching, asset strategy), not late polish.
 - **Styling:** deferred, low-stakes — any of CSS Modules / Tailwind / vanilla-extract.
-  Not an architectural dependency; pick during UI phase.
+  Not an architectural dependency; pick during UI phase. Whatever's chosen
+  drives its visuals off the theme **token layer** (§7a) rather than
+  hardcoded values.
 - **YouTube path:** for `stream-ytmusic` streams (`ytId`), playback is the
   YouTube IFrame player, not the `<audio>` subsystem. The playback machine
   treats "YT-backed item" as an alternate audio backend behind the same
   interface, so the queue/scheduler don't care which backend a given item uses.
+
+### 7a. Theming — pluggable UI, not a hardcoded look
+
+Yes: the look-and-feel is a **drop-in**, not baked in. This falls out of the
+`core`/`ui` boundary (§8a) almost for free — if the engine owns all state and
+behavior and the UI only renders it, then the UI is *itself* swappable.
+"Retro", "minimal", "modern" become selectable themes, switchable at runtime,
+addable without touching the engine.
+
+There are two tiers of "theme", and real themes use a mix of both:
+
+**Tier 1 — token themes (skinning).** A theme is a set of **design tokens** —
+palette, typography, spacing, radii, shadows, motion — exposed as CSS custom
+properties (`--color-bg`, `--font-display`, `--radius`, `--motion-scale`, …).
+Components read tokens, never hardcoded values, so a token swap restyles the
+whole app at runtime with zero layout change. This covers variants that share
+structure (e.g. "modern light" vs "modern dark" vs "high-contrast").
+
+**Tier 2 — component themes (reskinning the structure).** Some themes are
+*structurally* different, not just recolored: the retro theme has a spinning
+vinyl and A/B-side framing; a minimal theme is a tight list with no artwork
+chrome. That's not a token swap — the theme supplies its **own components**.
+To make that a clean drop-in we separate behavior from presentation:
+
+- **Headless view-model hooks** (`src/ui/viewmodels/`): per surface —
+  `useNowPlaying()`, `useQueue()`, `useBrowse()`, `useSearch()`,
+  `useLibrary()`, `useLyrics()`, … — pure adapters over the engine that
+  return data + bound commands (`{ track, isPlaying, positionMs, toggle,
+  next, prev, seek, … }`). Theme-agnostic; every theme consumes these.
+- **A typed theme contract** (`src/ui/theme-contract.ts`): the set of
+  *surfaces* a theme may implement (`NowPlaying`, `Queue`, `MiniPlayer`,
+  `Browse`, `Search`, `Library`, `AddonManager`, `Lyrics`) and the props each
+  receives. Surfaces are marked required vs optional, so a spartan theme can
+  omit e.g. `Lyrics` and the app degrades gracefully.
+- **A theme = a folder/module** implementing that contract (its components +
+  its token set). A **theme registry + `ThemeProvider`** picks the active one,
+  supplies its tokens as CSS vars, and renders its surfaces. The selected
+  theme is persisted like any other setting (Zustand → Dexie).
+
+```
+src/ui/
+  viewmodels/        # headless hooks over the engine — theme-agnostic
+  theme-contract.ts  # typed surface interface every theme is checked against
+  primitives/        # token-driven shared atoms (button, slider, scrubber) themes may reuse
+  themes/
+    retro/           # own components (spinning vinyl…) + tokens
+    minimal/         # own components (list-first…) + tokens
+    modern/          # …
+  ThemeProvider.tsx  # registry + runtime switch + token injection
+```
+
+Because every theme is wired to the same headless hooks, dropping in a new
+one is: add a folder, implement the required surfaces (reuse `primitives/`
+where you can), register it. The engine, scheduler, queue, and data layers
+are untouched.
+
+**Scope discipline (so this doesn't balloon):** build the *seam* — headless
+hooks + theme contract + token layer + one reference theme — during the UI
+phase (P-5), but **ship exactly one theme first**, authored against the
+contract. That proves the seam and makes theme #2 a genuine drop-in, without
+paying up front to build three UIs. Add more themes when they're actually
+wanted. A base theme plus themes that override only a few surfaces (inheriting
+the rest) keeps the per-theme cost down. *(Longer-term, because a theme is
+just a contract implementation, themes could even be distributed separately —
+a pluggable UI mirroring the pluggable-source addon philosophy — but that's a
+someday, not a v1 requirement.)*
 
 ---
 
@@ -298,12 +366,17 @@ player/
   src/
     core/            # PURE engine — no React, no UI imports. The "music-core".
       queue/         #   queue model + operations
-      playback/      #   state machine (XState or reducer)
+      playback/      #   hand-rolled discriminated-union FSM (§4b)
       scheduler/     #   resolution + prefetch
-      addon/         #   protocol client (types + fetchers)
+      addon/         #   protocol client (uses @p2p-songs/protocol types)
       audio/         #   audio backends (html-audio, youtube, fake) behind one interface
       persistence/   #   Dexie schema + adapters
-    ui/              # React components/views — may import from core, never vice versa
+    ui/              # may import from core, never vice versa
+      viewmodels/    #   headless per-surface hooks over the engine (theme-agnostic) — §7a
+      theme-contract.ts  # typed surface interface every theme implements — §7a
+      primitives/    #   token-driven shared atoms themes may reuse
+      themes/        #   drop-in themes (retro/ minimal/ modern/…): components + tokens — §7a
+      ThemeProvider.tsx  # theme registry + runtime switch + token injection
     app/             # Vite entry, router, providers (TanStack Query, stores)
   docs/
     ARCHITECTURE.md  # this file
@@ -392,6 +465,8 @@ bearing for correctness.
 4. **Styling system → deferred to the UI phase (P-5), by design.** No
    architectural impact; the `core`/`ui` boundary (§8a) means the visual
    layer is unconstrained and can be chosen — and changed — freely later.
+   Whatever's picked must drive visuals off theme tokens, since the UI is
+   **themeable/pluggable** (§7a), not a single hardcoded look.
 
 None of these block starting Phase P-1; all are isolated behind the module
 boundaries above.
@@ -412,7 +487,7 @@ locally.
 | **P-2** | Real audio subsystem: dual `<audio>` + volume-automation crossfade + MediaSession, wired to the machine, playing **hardcoded direct URLs**. | P-1 |
 | **P-3** | Real addon client + scheduler integration: manifest/catalog/meta/stream/lyrics fetch via TanStack Query; JIT resolve + TTL + fallback against a real stream addon. | P-1, `addon-sdk` + `stream-legal` existing |
 | **P-4** | Persistence + data layer: Dexie (library, playlists, installed addons, settings, history); catalog fan-out/merge across installed addons. | P-3 |
-| **P-5** | UI: search/browse, artist/album, now-playing, queue, library, addon manager (install by manifest URL). | P-2, P-3, P-4 |
+| **P-5** | UI: search/browse, artist/album, now-playing, queue, library, addon manager (install by manifest URL). Build the **theming seam** here — headless viewmodels + typed theme contract + token layer — and ship **one** reference theme against it (§7a), so further themes are drop-ins. | P-2, P-3, P-4 |
 | **P-6** | PWA polish: service worker, installability, offline metadata/artwork, background-audio hardening. | P-5 |
 
 Cross-repo note: **P-1 and P-2 have no external dependency** and can start

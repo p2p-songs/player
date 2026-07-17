@@ -316,6 +316,43 @@ Decision to confirm (§9): publish them from `addon-sdk` as
 `@p2p-songs/protocol` and import here, vs. vendoring a copy. Leaning
 "export from addon-sdk" so there's one source of truth for the wire format.
 
+### 8a. The boundary *enables* the UI/UX — it doesn't limit it
+
+A concern worth putting on the record so it isn't relitigated later: does a
+strict `core`/`ui` split get in the way of building a rich, characterful,
+animated interface? **The opposite — the split is what makes a free-form UI
+cheap and safe.**
+
+`src/core` dictates **zero pixels.** It owns *state and behavior* (what's
+playing, what's next, position, shuffle/repeat, which addon resolved the
+stream, lyrics availability) and exposes that as plain, typed, reactive data.
+`src/ui` is then free to render that data in any visual language whatsoever —
+custom fonts, bespoke animations (a spinning-vinyl now-playing screen, a
+canvas visualizer), any palette, any layout, multiple alternate views of the
+same state (full now-playing ⇄ mini-player) — without the engine knowing or
+caring. Restyling, re-animating, or completely reskinning the app touches
+only `src/ui` and never risks the playback/queue/resolution logic.
+
+Concretely, a fully-featured now-playing screen maps entirely onto data the
+engine already exposes — no engine change is needed to build an ambitious UI:
+
+| A rich now-playing / queue UI wants… | …reads from (already in the engine) |
+|---|---|
+| Track title / artist / album / year / artwork | current `QueueItem.track` (from `musicmeta`) |
+| "Up next" list | `Queue.items` after the cursor (§4a) |
+| "Autoplay radio (based on this album/artist)" section | `Queue.autoplaySeed` + radio extension (§4a) |
+| Queue ⇄ Lyrics tabs | queue from engine; lyrics from the `lyrics` addon resource |
+| Progress bar + elapsed/total time | playback machine position + `track.durationMs` (§4b) |
+| Shuffle / repeat / skip / play-pause controls | commands into the playback machine + queue; non-destructive shuffle & repeat modes already modeled (§4a/§4b) |
+| "Streaming from: <source>" indicator | which addon/stream the scheduler resolved (§5) |
+| Minimize → mini-player (same state, different skin) | any number of views subscribing to the same engine state |
+
+So the design rule for the UI phase (P-5): **the UI subscribes to engine
+state and issues commands; it never owns playback/queue logic.** That is
+exactly what keeps the visual layer unconstrained — you can build whatever
+UX you want on top, and change it freely later, because none of it is load-
+bearing for correctness.
+
 ---
 
 ## 9. Decisions to confirm before building

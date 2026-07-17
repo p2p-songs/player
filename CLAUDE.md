@@ -25,3 +25,8 @@ Full architecture: [`p2p-songs/.github` — `docs/IMPLEMENTATION_PLAN.md`](https
 ## Status
 Scaffolding only (this file + README). No `music-core` or player-app code
 yet. Next: Phase 4 (`music-core`, headless), then Phase 5 (player app UI).
+
+## Being audited?
+If you're the adversarial reviewer, not the implementer: start at
+[`p2p-songs/.github` — `docs/ADVERSARIAL_REVIEW_CONTRACT.md`](https://github.com/p2p-songs/.github/blob/main/docs/ADVERSARIAL_REVIEW_CONTRACT.md),
+not this file.

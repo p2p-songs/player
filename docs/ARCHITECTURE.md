@@ -128,8 +128,9 @@ type RepeatMode = "off" | "one" | "all";
 
 interface QueueItem {
   id: string;                 // stable queue-item id (not the track id — same track can appear twice)
-  track: TrackRef;            // { mbid, title, artist, album, durationMs, artwork }
+  track: TrackRef;            // { mbid, title, artist, album, durationMs, artwork } — persistable
   resolution: ResolutionState; // idle | resolving | resolved(streams, chosenIdx, url, expiresAt) | failed
+                              // MEMORY-ONLY: never persisted; forced to `idle` on hydration (§6)
 }
 
 interface Queue {
@@ -195,8 +196,33 @@ the machine ever grows deeply nested, swapping in
 
 **Two `HTMLAudioElement`s (A/B), ping-ponged.** The idle element preloads the
 next track's resolved URL (`preload="auto"`); on `ended` (or a crossfade
-point) the roles swap. This gives near-gapless and true crossfade via JS
-volume automation on the two elements.
+point) the roles swap, with volume automation on the two elements.
+
+**Be precise about what this does and doesn't guarantee** — these are two
+different features with different achievability:
+
+- **Crossfade (deliberate overlap):** always achievable. Start the next
+  element and ramp `volume` down/up over an overlap window. No sample-accuracy
+  needed; this is the robust default and works regardless of CORS.
+- **True gapless (no silence between tracks):** *not* guaranteed by "swap on
+  `ended`" alone. An `ended` event followed by a JS-triggered `play()` is
+  subject to event-loop delay, browser buffering/throttling policy,
+  codec/container encoder padding (MP3/AAC add silence at file boundaries),
+  and autoplay restrictions — any of which can produce an audible gap even
+  when the code is correct. Dual-element swap gets us *close*, but it is not a
+  sample-accurate scheduling contract. Sample-accurate gapless would require
+  Web Audio buffer scheduling (which hits the CORS-taint wall noted below) or
+  format-aware handling, and is explicitly **not** promised for v1.
+
+**Measured criterion, not an absolute claim.** "Gapless" is validated against
+a target, not asserted: inter-track silence below a defined threshold (e.g.
+≤ ~20 ms) on a named **browser × codec matrix** (at minimum current
+Chromium + Firefox + WebKit, with FLAC and MP3/AAC fixtures), exercised by an
+**integration test using controlled same-origin media fixtures** (not live
+addon streams). Where a codec/browser combination can't meet the threshold
+with dual-element swap, the honest fallback is a short crossfade to mask the
+seam. This replaces the earlier unqualified "plays a full album gapless"
+guarantee.
 
 Key web-specific reasoning:
 - **Crossfade via `element.volume` automation, not Web Audio — on purpose.**
@@ -258,12 +284,65 @@ expiry, and failure.
 |---|---|---|
 | Addon HTTP responses (catalog, meta, search, stream, lyrics) | **TanStack Query** | Caching, request dedup, retries, stale-while-revalidate, parallel fan-out across installed addons, cancellation — all the machinery stremio-core hand-writes in Rust, already solved and battle-tested on web. Merge/dedup addon results by MBID on top. |
 | Durable library: saved tracks/albums/artists, playlists, play history | **Dexie (IndexedDB)** | A music library grows to thousands of items and needs **indexed local search/filter/sort** — that wants a queryable store, not a JSON blob. (`idb` is the lighter fallback if v1 library stays small; Dexie recommended because local library search is a core music-app expectation.) |
-| Installed addon URLs + cached manifests | **Dexie** | Small but durable; lives with the rest of persistent state. |
+| Installed addon URLs + cached manifests | **Dexie**, in a dedicated **secret-bearing store** (§6a) | A *configured* addon URL contains the addon's config, which for `stream-debrid` includes a debrid API key — so this store holds credential material and is handled accordingly (§6a). |
 | Session / UI state (current view, queue snapshot, volume, mini-player) | **Zustand** | Tiny, framework-light, subscribe from React or from the engine. Queue + playback *snapshots* are mirrored here for the UI to render; the engine remains the source of truth. |
 
-Persistence policy: the engine owns live state; a thin adapter debounces
-queue/library/settings changes into Dexie so a reload restores your session
-(queue, position, library). No server, no account.
+Persistence policy — **persist identity, not resolved media.** A thin adapter
+debounces durable state into Dexie so a reload restores your session, but it
+persists **only**: library, playlists, installed addon URLs, settings, and
+the queue's *identity/order/cursor/track-metadata*. It does **not** persist:
+
+- **Resolved stream URLs / `QueueItem.resolution`.** These are memory-only.
+  Direct debrid/CDN links are bearer URLs with an `expiresAt`; persisting them
+  would restore stale, secret-bearing links that must be re-resolved anyway.
+  **On hydration, every restored `QueueItem` is forced to `resolution: idle`,**
+  so the JIT scheduler (§5) re-resolves the current/next items fresh. This
+  also means a reload never plays from a persisted expired link.
+- **TanStack Query's addon-response cache** (which includes `/stream`
+  responses). It stays an in-memory cache; it is not persisted to disk. If
+  query persistence is ever added for offline metadata, `/stream` responses
+  are excluded.
+
+No server, no account; everything is local to the device.
+
+### 6a. Credential handling for configured addons
+
+**Honest classification: a configured stream addon's manifest URL is itself a
+bearer secret, and the player holds it.** The `/configure` model encodes the
+addon's config — for `stream-debrid`, the debrid API key — into the manifest
+URL path (`https://stream-debrid.example/<config>/manifest.json`). The player
+must hold that URL to call the addon at all, so there is no design in which
+the player "doesn't have the key": if it can call a configured addon, it holds
+the credential. An earlier draft claimed "debrid keys never live in the
+player" — that was **false** and is corrected here. (It stays true that the
+player never has its *own* debrid account and never bundles credentials; the
+key is the *user's*, entered by them, and — because it travels only in the
+URL the user pasted — it stays on the user's own device and is sent only to
+the addon they configured. That's a fine trust model; it just has to be
+handled as the secret it is.)
+
+Handling rules (all of these are implementation requirements, auditable):
+
+- **Stored as credential material:** configured addon URLs live in their own
+  Dexie store, conceptually the "keychain," separate from non-sensitive state.
+- **Never logged or exported in the clear:** never written to `console`, error
+  telemetry, diagnostics, analytics, or any bug-report/export blob. Anywhere a
+  URL is shown or copyable in the UI, the config segment is **redacted** (show
+  addon name + host, mask `<config>`).
+- **Never cached by the service worker / HTTP cache.** The PWA service worker
+  (§7) must exclude configured-addon requests from any cache; only the addon's
+  *responses* it's allowed to cache (metadata/artwork) may be cached, never the
+  request URL as a cache key in a way that persists the secret.
+- **Deletable / rotatable:** removing an addon purges its stored URL; there's a
+  path to re-paste an updated URL (rotated key).
+- **Local-only:** never synced anywhere (consistent with the no-account model).
+
+*Future option (not v1):* an opaque config identifier — the addon stores the
+real config server-side keyed by a random ID, and the URL carries only the ID.
+Rejected for v1 because it makes the addon **stateful** and moves the user's
+debrid key onto the addon operator's server, which is a *worse* posture for a
+"your own credentials, your own device" tool than keeping the key client-side
+and handling it as a secret.
 
 ---
 
@@ -504,15 +583,27 @@ P-1/P-2).
 §1/§7/§8 for the player specifically.)
 
 - **Neutrality:** still no bundled/default-installed stream addon; addons are
-  added only by user-pasted manifest URL. (Unchanged from master plan §3.)
-- **No secrets in the player:** debrid keys / indexer config never live here —
-  that's addon-side config only. The player only ever receives already-
-  resolved URLs (or a `ytId`). (Unchanged.)
+  added only by user-pasted manifest URL. The player never has its *own*
+  debrid account and never ships credentials. (Unchanged from master plan §3.)
+- **Configured addon URLs are secrets, and the player handles them as such
+  (§6a):** the player *does* hold the user's key inside the configured
+  manifest URL — that's unavoidable if it's to call the addon — so it stores
+  that URL as credential material, never logs/exports/telemeters it, redacts
+  the config segment in the UI, and excludes it from service-worker caching.
+  (This **corrects** the earlier false "no secrets in the player" claim.)
+- **Resolved media is memory-only (§6):** resolved stream URLs /
+  `QueueItem.resolution` and the TanStack Query `/stream` cache are never
+  persisted; on hydration every queue item is forced to `resolution: idle` and
+  re-resolved JIT. Persisting bearer stream links is an anti-pattern — flag it.
 - **Engine purity:** `src/core` must not import from `src/ui` — enforced by
   lint. The engine stays headless-testable.
 - **Resolution is JIT, never whole-queue:** resolving the entire queue upfront
   (leaking/expiring debrid links, hammering debrid APIs) is an
   anti-pattern and should be flagged if it appears.
+- **Gapless is a measured target, not an absolute (§4c):** true gapless is not
+  guaranteed by dual-element swap; it's validated against a silence threshold
+  on a browser×codec matrix, with crossfade as the fallback. Don't treat "plays
+  gapless" as an unconditional guarantee.
 - **Superseded invariant:** REVIEW_CHECKLIST §8's "music-core stays Elm-style
   `Msg→Effects→Model`" is **intentionally retired** by this document — the
   Elm mechanism was a means to predictable state, and we achieve that via the

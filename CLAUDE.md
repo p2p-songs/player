@@ -21,9 +21,15 @@ Master plan (protocol/addons/legal context, unchanged): [`p2p-songs/.github` —
   (including `stream-debrid`). Addon installation is exclusively "user
   pastes a manifest URL." This is what keeps this repo as neutral as
   Stremio-the-app.
-- No debrid credentials, indexer config, or other addon-specific secrets
-  ever live here — the player only ever receives already-resolved URLs (or
-  a `ytId`).
+- The player never has its own debrid account and never bundles credentials.
+  BUT a *configured* addon's manifest URL contains the user's debrid key, and
+  the player necessarily holds it — so configured URLs are treated as secrets
+  (stored as credential material, never logged/exported, redacted in UI, not
+  SW-cached). See ARCHITECTURE §6a. (Do not repeat the old, false "no keys in
+  the player" claim.)
+- Resolved stream URLs / `QueueItem.resolution` and the `/stream` query cache
+  are memory-only — never persisted; queue items hydrate to `resolution: idle`.
+  See ARCHITECTURE §6.
 - `src/core` imports nothing from `src/ui` (lint-enforced). The engine
   stays headless-testable.
 - Stream resolution is just-in-time for the next 1-2 queue items, never

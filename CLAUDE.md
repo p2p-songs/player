@@ -16,6 +16,11 @@ the library, Zustand for session state, dual-`<audio>` crossfade, MediaSession
 
 Master plan (protocol/addons/legal context, unchanged): [`p2p-songs/.github` — `docs/IMPLEMENTATION_PLAN.md`](https://github.com/p2p-songs/.github/blob/main/docs/IMPLEMENTATION_PLAN.md).
 
+## Before implementation
+Read `../.github/docs/audits/README.md` and its first (latest) report before
+starting work. The registry owns current sign-off and supersession; do not rely
+only on issue notifications.
+
 ## Invariants this repo must hold (see `.github`'s `docs/REVIEW_CHECKLIST.md` §1, §7, §8 and `docs/ARCHITECTURE.md` §11)
 - Never bundle, default-install, or hardcode any specific stream addon
   (including `stream-debrid`). Addon installation is exclusively "user

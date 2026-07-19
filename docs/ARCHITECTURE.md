@@ -724,8 +724,13 @@ player/
 addons and the player, so they get **one source of truth**, not a copy on
 each side that can silently drift. Canonical home is the **`addon-sdk` repo**
 (the SDK is literally the tool for implementing the protocol, so the contract
-belongs with it), exported as a types-only `@p2p-songs/protocol` package that
-this repo depends on. Mechanics during early churn: consume it as a **pinned
+belongs with it), exported as a **schema-first** `@p2p-songs/protocol` package
+that this repo depends on. Schema-first (zod): the zod schemas are the single
+source of truth, TypeScript types are `z.infer`red from them, and runtime
+validators come for free — better than hand-maintained types + separate
+validators for a wire contract (one definition, cannot drift). Zero heavy
+deps; type-only consumers (this player, at compile time) use `import type` and
+pay nothing at runtime. Mechanics during early churn: consume it as a **pinned
 git dependency** to avoid a publish-on-every-change treadmill while the
 protocol is pre-1.0; promote to a properly published npm / GitHub Packages
 release when the protocol stabilizes at v1. Finalized packaging details land

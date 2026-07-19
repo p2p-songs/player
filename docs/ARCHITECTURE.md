@@ -135,7 +135,11 @@ type QueueItemId = string;    // stable, unique per queue entry (same track can 
 
 interface QueueItem {
   id: QueueItemId;
-  track: TrackRef;            // { mbid, title, artist, album, durationMs, artwork } — persistable
+  track: TrackRef;            // persistable. Identity is entity-typed MBIDs (Plan §8):
+                              //   recordingId: `mbid:recording:<uuid>`  ← THE streamable/cache/dedup key
+                              //   trackId?:    `mbid:track:<uuid>`       ← album-context (ordering, disc) only
+                              //   releaseId?:  `mbid:release:<uuid>`     ← album grouping / bingeGroup
+                              //   + title, artist, album, durationMs, artwork
   resolution: ResolutionState; // idle | resolving | resolved(streams, chosenIdx, url, expiresAt?) | failed
                               // MEMORY-ONLY: never persisted; forced to `idle` on hydration (§6).
                               // `expiresAt` is optional and only ever a hint (§5) — the protocol

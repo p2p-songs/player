@@ -9,10 +9,13 @@ anything addon-specific.
 
 **Architecture is specified in [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)
 in this repo — read it first.** It is a deliberate, web-native design, NOT a
-port of stremio-core: no Elm/Rust, a scoped playback state machine (XState
-or reducer) for predictable state, TanStack Query for addon HTTP, Dexie for
-the library, Zustand for session state, dual-`<audio>` crossfade, MediaSession
-+ PWA. It supersedes the "Elm-style `music-core`" language in the master plan.
+port of stremio-core: no Elm/Rust, a scoped playback state machine
+(hand-rolled discriminated-union reducer FSM — decided, §4b) for predictable
+state, TanStack Query for metadata + a separate scheduler-owned command plane
+for `/stream`, Dexie for the library, Zustand for session state,
+dual-`<audio>` crossfade, MediaSession + PWA, and an **optional** accounts/sync
+layer (self-hosted backend, §6b). It supersedes the "Elm-style `music-core`"
+language in the master plan.
 
 Master plan (protocol/addons/legal context, unchanged): [`p2p-songs/.github` — `docs/IMPLEMENTATION_PLAN.md`](https://github.com/p2p-songs/.github/blob/main/docs/IMPLEMENTATION_PLAN.md).
 
@@ -39,12 +42,19 @@ only on issue notifications.
   stays headless-testable.
 - Stream resolution is just-in-time for the next 1-2 queue items, never
   whole-queue-upfront (debrid links expire; don't hammer debrid APIs).
+- **Accounts/sync is optional and additive (§6b):** the app works fully
+  logged-out. Logged in, durable state (incl. configured addon URLs) syncs to
+  the user's own self-hosted backend (`backend` repo) — the sync *adapter*
+  lives in this repo. Syncing the configured URL (which carries the debrid key)
+  is an accepted, server-readable model (Stremio's); resolved stream URLs never
+  sync. No remote UI/theme code (same-origin credential threat). See §6b.
 
 ## Status
 Scaffolding + architecture plan only. No engine or UI code yet. Build order
 is in [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) §10: P-1 headless
 engine (fakes) → P-2 audio subsystem → P-3 addon client → P-4 persistence →
-P-5 UI → P-6 PWA. P-1/P-2 have no cross-repo dependency and can start now.
+P-5 UI → P-6 PWA → P-7 accounts/sync (with the `backend` repo). P-1/P-2 have
+no cross-repo dependency and can start now.
 
 ## Being audited?
 If you're the adversarial reviewer, not the implementer: start at

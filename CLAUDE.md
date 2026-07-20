@@ -50,11 +50,24 @@ only on issue notifications.
   sync. No remote UI/theme code (same-origin credential threat). See §6b.
 
 ## Status
-Scaffolding + architecture plan only. No engine or UI code yet. Build order
-is in [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) §10: P-1 headless
-engine (fakes) → P-2 audio subsystem → P-3 addon client → P-4 persistence →
-P-5 UI → P-6 PWA → P-7 accounts/sync (with the `backend` repo). P-1/P-2 have
-no cross-repo dependency and can start now.
+**P-1 headless engine — in progress (2026-07-20).** The package is set up
+(TS + vitest; consumes `@p2p-songs/protocol` via `link:` to the sibling
+addon-sdk checkout). Landed so far, both pure and fully unit-tested:
+- **`src/core/queue`** (§4a) — stable-`QueueItemId` model with
+  `canonicalOrder`/`playOrder`, non-destructive shuffle (current-first, injected
+  rng), repeat off/one/all next/prev, up-next from play order (the shuffle-bug
+  fix), insert/remove/move keeping all structures consistent, memory-only
+  `resolution` + `resetResolutions` for hydration. 13 tests.
+- **`src/core/playback`** (§4b) — hand-rolled discriminated-union FSM;
+  pure/total `transition(state,event)`; **stamp `{epoch,itemId,attemptId}`
+  validation drops stale async completions** (resolve-after-skip,
+  failure-after-success, wrong-epoch/attempt/item, double-completion). 9 tests.
+
+Still to do for P-1: fake audio backend + fake resolver behind interfaces, the
+**resolution+prefetch scheduler (§5, the centerpiece)**, and the **engine
+orchestrator** with the full async-race matrix + failure circuit-breaker (§4b).
+Then P-3 (real addon client — metadata query plane + `/stream` command plane —
++ a live-addon e2e test). Build order: [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) §10.
 
 ## Being audited?
 If you're the adversarial reviewer, not the implementer: start at

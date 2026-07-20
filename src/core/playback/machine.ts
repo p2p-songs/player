@@ -58,6 +58,11 @@ export function initialState(epoch = 0): PlaybackState {
   return { status: "idle", epoch };
 }
 
+/** A stable string key for a stamp (identity for dedup / audio-token correlation). */
+export function stampKey(s: Stamp): string {
+  return `${s.epoch} ${s.itemId} ${s.attemptId}`;
+}
+
 /** The current attempt's stamp, if the state has one. */
 function stampOf(state: PlaybackState): Stamp | undefined {
   switch (state.status) {

@@ -50,24 +50,36 @@ only on issue notifications.
   sync. No remote UI/theme code (same-origin credential threat). See §6b.
 
 ## Status
-**P-1 headless engine — in progress (2026-07-20).** The package is set up
-(TS + vitest; consumes `@p2p-songs/protocol` via `link:` to the sibling
-addon-sdk checkout). Landed so far, both pure and fully unit-tested:
-- **`src/core/queue`** (§4a) — stable-`QueueItemId` model with
-  `canonicalOrder`/`playOrder`, non-destructive shuffle (current-first, injected
-  rng), repeat off/one/all next/prev, up-next from play order (the shuffle-bug
-  fix), insert/remove/move keeping all structures consistent, memory-only
-  `resolution` + `resetResolutions` for hydration. 13 tests.
-- **`src/core/playback`** (§4b) — hand-rolled discriminated-union FSM;
-  pure/total `transition(state,event)`; **stamp `{epoch,itemId,attemptId}`
-  validation drops stale async completions** (resolve-after-skip,
-  failure-after-success, wrong-epoch/attempt/item, double-completion). 9 tests.
+**P-1 headless engine — DONE (2026-07-20).** The package is set up (TS + vitest;
+consumes `@p2p-songs/protocol` via `link:` to the sibling addon-sdk checkout).
+All pure/headless, driven by a fake audio backend + fake resolver. **38 tests;
+typecheck + build green.**
+- **`src/core/queue`** (§4a) — stable-`QueueItemId` model; `canonicalOrder`/
+  `playOrder`; non-destructive shuffle (current-first, injected rng); repeat
+  off/one/all; up-next from play order (the shuffle-bug fix); insert/remove/move
+  consistent; memory-only `resolution` + `resetResolutions` for hydration.
+- **`src/core/playback`** (§4b) — hand-rolled discriminated-union FSM; pure/total
+  `transition`; **stamp `{epoch,itemId,attemptId}` validation** drops stale async
+  completions.
+- **`src/core/scheduler`** (§5/§5a) — resolution command plane: dedup by
+  operation-id stamp, no retry/refetch, supersede+abort, `cancelExcept`,
+  memory-only. Behind a `Resolver` interface (fake for P-1).
+- **`src/core/audio`** (§4c) — narrow `AudioBackend` interface + a controllable
+  fake; load/preload carry a token so completions tie back to their attempt.
+- **`src/core/engine`** — the orchestrator: JIT prefetch (next 1–2 on play),
+  fallback (walk ranked streams → re-resolve once → skip-ahead), the **bounded
+  failure circuit-breaker** (resets on a successful play), and the full
+  engine-level **async-race matrix** (resolve-after-skip, reorder-during-resolve,
+  failure-after-success, stale-token drops).
 
-Still to do for P-1: fake audio backend + fake resolver behind interfaces, the
-**resolution+prefetch scheduler (§5, the centerpiece)**, and the **engine
-orchestrator** with the full async-race matrix + failure circuit-breaker (§4b).
-Then P-3 (real addon client — metadata query plane + `/stream` command plane —
-+ a live-addon e2e test). Build order: [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) §10.
+**Testing/tooling note:** run `./node_modules/.bin/tsc …` / `vitest` directly —
+pnpm's pre-run auto-install re-prompts for the esbuild build script.
+
+Next: **P-3** — real addon client (metadata query plane via TanStack Query +
+`/stream` command plane per §5a, memory-only, stamped) implementing `Resolver`,
+plus a **live-addon e2e test** against `musicmeta` + `stream-legal`. (P-2 real
+`<audio>` backend is browser-only; the fake covers headless P-1/P-3.) Build
+order: [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) §10.
 
 ## Being audited?
 If you're the adversarial reviewer, not the implementer: start at

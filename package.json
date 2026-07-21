@@ -15,6 +15,9 @@
     "@p2p-songs/protocol": "link:../addon-sdk/packages/protocol"
   },
   "devDependencies": {
+    "@p2p-songs/addon-sdk": "link:../addon-sdk/packages/sdk",
+    "@p2p-songs/musicmeta": "link:../addons/packages/musicmeta",
+    "@p2p-songs/stream-legal": "link:../addons/packages/stream-legal",
     "typescript": "^5.6.3",
     "vitest": "^2.1.8"
   },

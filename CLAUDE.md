@@ -75,18 +75,48 @@ typecheck + build green.**
   can't poison the cache with a stale bearer URL. Adding the first item to an
   empty queue sets a cursor (+ `play()` falls back to `playOrder[0]`).
 
-**A-007 (2026-07-20) reconciled.** Known **deferred** gaps recorded in
-ARCHITECTURE §4b: provider-wide exponential backoff and the ~30 s re-prefetch net
-→ P-3; consecutive-threshold vs sweep-set is a deliberate simplification. 46
-tests.
+**A-007 (2026-07-20) reconciled.** consecutive-threshold vs sweep-set is a
+deliberate simplification (still current). 46 tests at P-1.
+
+**P-3 headless slice — DONE (2026-07-21).** The real addon client
+(**`src/core/addon/`**) — the player's HTTP+JSON consumer of installed addons —
+now fills the `Resolver` seam the P-1 fake occupied. **88 tests; typecheck +
+build + live-HTTP e2e green.**
+- **`http.ts`** — narrow injectable transport + the **outage-vs-empty**
+  classification everything else keys off: network/5xx/auth/malformed → provider
+  down; 404/benign-4xx → "no answer" (not an outage).
+- **`endpoints.ts`** — request-URL builder, the inverse of the SDK router's
+  parser; `https`-only except a **loopback `http`** exception for local addons
+  (§6a).
+- **`client.ts`** — manifest-aware `AddonClient`: `supports`/`handlesType`/
+  `handlesId` gating, and **validates every response against the
+  `@p2p-songs/protocol` schema** before it reaches the engine (addons are
+  untrusted input). No direct `zod` dep — a structural `Validator` interface.
+- **`provider-health.ts` + `stream-resolver.ts`** — `AddonStreamResolver`
+  (`implements Resolver`): fan `/stream` across stream addons, merge url-bearing
+  streams, **provider-wide exponential backoff** (the P-3 half of "failure is
+  bounded", §4b — distinguishes a down addon from a track that isn't there). It
+  stays a *plain* resolver; the command-plane semantics (§5a) remain the
+  Scheduler's job.
+- **`collection.ts`** — `AddonCollection`: install-by-URL (no bundled addon,
+  §11), plane views (`streamProviders()`, `getMeta`).
+- **`tests/e2e-addon.test.ts`** — boots the **real** `stream-legal` + `musicmeta`
+  (built with the real SDK) over **real HTTP** with fixture-injected upstreams;
+  drives `AddonCollection` + `AddonStreamResolver` + `Engine` end to end
+  (metadata plane + resolve→buffer→play). Proves the wire grammar can't drift.
+- **Metadata query-plane note:** the transport+validation is here; the TanStack
+  Query *policy* wrapper lives with the `QueryClient` in the app/UI layer (P-5),
+  not `src/core` (ARCHITECTURE §5a). The `addon-sdk`/`stream-legal`/`musicmeta`
+  packages are **test-only** devDeps (link:) — no runtime addon dependency.
 
 **Testing/tooling note:** run `./node_modules/.bin/tsc …` / `vitest` directly —
-pnpm's pre-run auto-install re-prompts for the esbuild build script.
+pnpm's pre-run auto-install re-prompts for the esbuild build script. The addon
+devDeps are wired as `node_modules/@p2p-songs/*` symlinks (like `protocol`).
 
-Next: **P-3** — real addon client (metadata query plane via TanStack Query +
-`/stream` command plane per §5a, memory-only, stamped) implementing `Resolver`,
-plus a **live-addon e2e test** against `musicmeta` + `stream-legal`. (P-2 real
-`<audio>` backend is browser-only; the fake covers headless P-1/P-3.) Build
+Next: **P-2** (real dual-`<audio>` backend + crossfade + MediaSession — the last
+piece for real end-to-end playback in a browser) or **P-4** (Dexie persistence +
+catalog fan-out/merge). Deferred within P-3: cross-provider stream ranking, the
+~30 s re-prefetch net (needs P-2 timing), TanStack Query wrapper (P-5). Build
 order: [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) §10.
 
 ## Being audited?

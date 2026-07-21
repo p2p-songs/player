@@ -256,14 +256,19 @@ the UI looks busy. Rules:
 - *Deliberate simplification:* P-1 uses the **consecutive-failure** variant only,
   not the "every eligible item failed once" **sweep-set**. Both bound the loop;
   the sweep-set is a possible refinement, not a correctness gap.
-- *Deferred to P-3 (real addon client):* **provider-wide exponential backoff**
-  for a globally-unreachable/auth-failing addon is not yet implemented — with a
-  single in-process resolver there is no provider to back off from. It must land
-  when the multi-addon client does, distinguishing "this track failed" from "this
-  addon is down."
-- *Deferred:* the **"~30 s remaining" re-prefetch safety net** (§5.1) — P-1
-  prefetches on entering `playing` only; the position-triggered top-up lands with
-  real playback timing.
+- *Implemented in P-3 (real addon client):* **provider-wide exponential backoff**
+  for a globally-unreachable/auth-failing addon. `core/addon/provider-health.ts`
+  tracks per-addon failures and grows a backoff window (1s→2s→4s…, capped); the
+  `AddonStreamResolver` skips a backed-off addon addon-wide instead of re-hitting
+  it per track, and — the distinction P-1 couldn't make with one in-process fake
+  — a **reachable** addon that simply returns no match is *not* a failure (it
+  clears backoff), so "this track isn't here" never looks like "this addon is
+  down." Transport classification (unreachable/5xx/auth/malformed → back off;
+  404/benign-4xx/empty → no match) lives in `core/addon/http.ts`.
+- *Deferred (needs real playback timing → P-2):* the **"~30 s remaining"
+  re-prefetch safety net** (§5.1) — P-1/P-3 prefetch on entering `playing` only;
+  the position-triggered top-up lands with the real `<audio>` backend's
+  `timeupdate` events.
 
 **Decision: a hand-rolled discriminated-union finite state machine** (state
 is a union like `{ status: "playing"; … } | { status: "resolving"; … }`;
@@ -397,6 +402,31 @@ This component is pure logic over the addon client + queue, so it's
 **fully unit-testable** with a fake resolver that simulates latency,
 expiry, failure, and duplicate/late completion.
 
+**Implemented (P-3): the real addon client (`src/core/addon/`).** The `Resolver`
+seam that P-1 filled with a fake is now the `AddonStreamResolver`, which fans
+`/stream` out across the installed stream addons over real HTTP, merges the
+url-bearing streams into one ranked list, and applies provider-wide backoff
+(§4b). It stays a **plain** resolver — no caching, no retry — precisely because
+the command-plane semantics §5a demands (dedup by operation id, no
+retry/refetch, memory-only, §4b stamping) are the *scheduler's* job; keeping
+them there is why the seam exists. `AddonClient` validates every addon response
+against the `@p2p-songs/protocol` schema before it reaches the engine (an addon
+is untrusted input), and the request-URL builder is the inverse of the SDK
+router's parser — a **live-addon e2e test** (§10) drives the real
+`stream-legal`/`musicmeta` over HTTP so that grammar can't silently drift.
+
+**Where the two planes physically live.** The *command* plane is engine-owned
+(the scheduler + `AddonStreamResolver`, in `src/core`). The *metadata* plane's
+**transport + validation** also lives in `src/core/addon` (`AddonClient.getMeta`
+/`getCatalog`/`getLyrics`, `AddonCollection`), but its **TanStack Query policy
+wrapper** (dedup/cache/SWR/retry) is applied one layer out — where the
+`QueryClient` lives, in the app/UI providers (P-5) — *not* inside `src/core`.
+This keeps the engine headless and dependency-light (the query library is a
+data/UI-layer concern), and only the command plane, which must be
+scheduler-owned, sits in the engine. This is a deliberate split, not a missing
+piece: the metadata plane is a set of idempotent GETs that any caching layer can
+wrap, whereas `/stream` can never inherit those defaults (§5a).
+
 ---
 
 ## 6. Data & persistence
@@ -473,6 +503,12 @@ requirement, not a nicety:
 
 Handling rules (implementation requirements, auditable):
 
+- **Transport is `https` for any real (remote) addon** (the addon client rejects
+  a non-`https` manifest URL), since a configured URL may carry the debrid key —
+  it must never travel in cleartext. The **one exception is a loopback host**
+  (`localhost`/`127.0.0.0/8`/`::1`), where plain `http` is allowed: a locally-run
+  addon (`serveHTTP`) never leaves the machine, and this is how it's installed in
+  dev and driven by the e2e test (§10). Enforced in `core/addon/endpoints.ts`.
 - **Stored as credential material** in the dedicated secret-bearing store,
   separate from non-sensitive state (organization, on top of — not instead of —
   the threat model above).
@@ -856,6 +892,22 @@ Cross-repo note: **P-1 and P-2 have no external dependency** and can start
 immediately. P-3 onward needs `addon-sdk` and at least `stream-legal` /
 `musicmeta` from the `addons` repo to exist for real integration (fakes carry
 P-1/P-2).
+
+**P-3 status — DONE for the headless slice (2026-07-21).** The addon client
+(`src/core/addon/`) is built: transport with outage-vs-empty classification, the
+request-URL builder, the manifest-aware `AddonClient` (validates every response),
+the `AddonCollection`, provider-wide backoff, and the `AddonStreamResolver` that
+replaces the P-1 fake behind the `Resolver` seam. The engine's JIT resolve,
+re-resolve-on-failure, and optional expiry hint were already in place from P-1
+and now run against a real addon. The **live-addon e2e** boots the real
+`stream-legal` + `musicmeta` over real HTTP (fixture-injected upstreams, so it's
+deterministic) and drives resolve→buffer→play end to end. **What remains for a
+full P-3:** the metadata plane's TanStack Query *policy wrapper* lands with the
+`QueryClient` in P-5 (the transport/validation is done here, §5a); cross-provider
+stream *ranking* (currently stable per-provider concat) and catalog fan-out/merge
+are P-4; the "~30 s remaining" re-prefetch net needs the real `<audio>` timing
+(P-2). The addon packages are **test-only** devDeps — the player depends on no
+addon at runtime (neutrality, §11).
 
 ---
 

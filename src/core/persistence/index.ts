@@ -8,6 +8,7 @@ export type { PersistenceStore } from "./store.js";
 export { MemoryStore } from "./memory-store.js";
 export { DexieStore } from "./dexie-store.js";
 export { PlayerRepository, type PlayerRepositoryOptions } from "./repository.js";
+export { SessionAutosave, AUTOSAVE_DEBOUNCE_MS, type SessionAutosaveOptions } from "./session-autosave.js";
 export {
   COLLECTIONS,
   redactManifestUrl,

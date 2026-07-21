@@ -512,6 +512,19 @@ content id** (install-order priority) — the "parallel fan-out across installed
 addons; merge/dedup by MBID" this table calls for, at the transport layer. The
 TanStack Query policy that wraps it stays at the app layer (§5a).
 
+**Implemented (P-5, hardened by A-010): the autosave lifecycle.**
+`SessionAutosave` debounces queue writes (800 ms) with two properties the first
+cut lacked. It **reschedules only on a changed queue snapshot** — the engine
+notifies on every position tick, and a debounce reset by those is reset faster
+than it can fire, so the queue was never written while a track played
+(`Engine.getState()` being referentially stable is what makes identity a
+sufficient test). And it **flushes rather than drops** the pending snapshot: on
+`visibilitychange`→hidden, on `pagehide`, and on teardown, so closing the tab
+inside the debounce window no longer restores a stale queue. A rejected write
+leaves the snapshot pending so the next edit or flush retries it, without
+spinning. Flush during page teardown is best-effort by nature — firing on
+`visibilitychange` (not only `pagehide`) is what makes loss rare.
+
 Persistence policy — **persist identity, not resolved media.** A thin adapter
 debounces durable state into Dexie so a reload restores your session, but it
 persists **only**: library, playlists, installed addon URLs, settings, and the

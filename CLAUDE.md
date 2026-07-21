@@ -198,6 +198,14 @@ The app is a React/Vite shell at `index.html` → `src/app/main.tsx`.
   hydrate the queue on boot, debounced autosave, record plays. Needed
   **`Engine.restoreQueue`** so a restored session keeps its *stable ids* instead
   of rebuilding them (and forces every item back to `idle`).
+- **`SessionAutosave`** (`core/persistence`) owns the debounce; the hook only
+  decides when to feed and flush it. Two rules, both A-010 fixes: **only a
+  changed queue reschedules** (the engine notifies ~4×/s on position ticks, and
+  a debounce reset by those never fires — the queue went unsaved for the whole
+  of playback), and **a pending snapshot is flushed, not dropped**, on
+  `visibilitychange`→hidden, `pagehide`, and teardown. A rejected write keeps
+  the snapshot pending for the next edit or flush instead of leaving a stale
+  durable copy — but never spins retrying.
 - **`Engine.getState()` is now referentially stable** — it memoizes until
   `queue`/`playback` actually change. Returning a fresh object each call made
   `useSyncExternalStore` loop infinitely; snapshot stability is an engine

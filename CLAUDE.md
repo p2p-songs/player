@@ -114,15 +114,44 @@ typecheck + build + live-HTTP e2e green.**
   not `src/core` (ARCHITECTURE §5a). The `addon-sdk`/`stream-legal`/`musicmeta`
   packages are **test-only** devDeps (link:) — no runtime addon dependency.
 
-**Testing/tooling note:** run `./node_modules/.bin/tsc …` / `vitest` directly —
-pnpm's pre-run auto-install re-prompts for the esbuild build script. The addon
-devDeps are wired as `node_modules/@p2p-songs/*` symlinks (like `protocol`).
+**P-2 real audio subsystem — DONE (2026-07-21).** The browser audio backend
+(**`src/core/audio/`**) behind the existing `AudioBackend` interface. **121 tests;
+typecheck + `vite build` green.**
+- **`html-audio.ts`** — `HtmlAudioBackend` over **two ping-ponged media elements**:
+  `preload` buffers the next URL on the idle element; `load` of a preloaded URL
+  **swaps** to it (gapless) instead of reloading. Tokened events (`loaded`/`ended`/
+  `error`/`position`) echo each element's token so late completions drop by
+  identity (§4b); `ended`/`position` only from the active element; a rejected
+  `play()` (autoplay policy) is swallowed. **`crossfadeTo`** ramps `element.volume`
+  over an injectable ticker (never Web Audio — CORS, §4c).
+- **`media-element.ts`** — the narrow `MediaElementLike` seam + `Ticker`, injected
+  so the backend is **unit-tested in node** against fakes (`fake-media-element.ts`);
+  real factory = `new Audio()`. No happy-dom/jsdom.
+- **`media-session.ts`** — `bindMediaSession` mirrors current-track metadata +
+  play/pause to `navigator.mediaSession` and routes its actions back to engine
+  commands; no-op where unavailable; tested against a fake session.
+- **Engine preload wiring (§5.2):** `prefetchUpcoming` calls `audio.preload` for
+  the immediate-next resolved item, so the swap is live.
+- **`harness/`** — throwaway Vite page (`pnpm harness`) driving the real backend
+  with hardcoded direct URLs for the **manual audible smoke** (the one thing
+  headless tests can't assert — see `harness/README.md`). `vite` is a devDep for
+  this only.
+- **Deferred:** the anticipatory crossfade *trigger* (start fade before track end)
+  → position-timing work (§4b/§4c); the mechanism + gapless-swap default are done.
 
-Next: **P-2** (real dual-`<audio>` backend + crossfade + MediaSession — the last
-piece for real end-to-end playback in a browser) or **P-4** (Dexie persistence +
-catalog fan-out/merge). Deferred within P-3: cross-provider stream ranking, the
-~30 s re-prefetch net (needs P-2 timing), TanStack Query wrapper (P-5). Build
-order: [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) §10.
+**Testing/tooling note:** run `./node_modules/.bin/tsc …` / `vitest` directly —
+pnpm's pre-run auto-install re-prompts for the esbuild build script. Tests use a
+dedicated `vitest.config.ts` (the harness `vite.config.ts` sets `root: harness`).
+The addon devDeps are wired as `node_modules/@p2p-songs/*` symlinks (like
+`protocol`).
+
+Next: **P-4** (Dexie persistence: library/playlists/installed-addons/settings +
+queue-identity, and catalog fan-out/merge across addons) or **P-5** (UI). A small
+**position-timing** follow-up would close three deferrals at once (a monitor over
+the real `timeupdate` stream vs `track.durationMs`): the ~30 s re-prefetch net,
+the anticipatory crossfade trigger (§4c), and precise `setPositionState`. Also
+deferred within P-3: cross-provider stream ranking, TanStack Query wrapper (P-5).
+Build order: [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) §10.
 
 ## Being audited?
 If you're the adversarial reviewer, not the implementer: start at

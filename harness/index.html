@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>p2p-songs — P-2 audio harness</title>
+    <style>
+      body { font: 15px/1.5 system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; }
+      h1 { font-size: 1.2rem; }
+      textarea { width: 100%; box-sizing: border-box; font-family: ui-monospace, monospace; }
+      button { font-size: 1rem; padding: .4rem .8rem; margin: .15rem .3rem .15rem 0; cursor: pointer; }
+      label { display: inline-flex; align-items: center; gap: .35rem; }
+      #status { white-space: pre-wrap; background: #f4f4f5; padding: .75rem; border-radius: 6px; }
+      .muted { color: #666; }
+    </style>
+  </head>
+  <body>
+    <h1>p2p-songs — P-2 audio harness <span class="muted">(throwaway dev harness, not the app)</span></h1>
+    <p class="muted">
+      Drives the real <code>HtmlAudioBackend</code> + <code>Engine</code> + MediaSession with hardcoded direct
+      URLs (§10 P-2). Edit the URLs if any are unreachable. This exists to <em>hear</em> real playback,
+      crossfade, and OS media controls — the one thing headless tests can't prove.
+    </p>
+
+    <p>One direct audio URL per line (public-domain / CC recommended):</p>
+    <textarea id="urls" rows="4"></textarea>
+
+    <p>
+      <button id="load">Set queue</button>
+      <button id="play">▶ Play</button>
+      <button id="pause">⏸ Pause</button>
+      <button id="next">⏭ Next</button>
+      <button id="prev">⏮ Prev</button>
+      <button id="seek30">⏩ Seek 30s</button>
+      <button id="crossfade">⤫ Crossfade to next (3s)</button>
+    </p>
+    <p class="muted">
+      <strong>Play → Next</strong> exercises the engine (gapless swap of the preloaded element);
+      <strong>Crossfade</strong> calls the backend's volume-ramp directly to hear the overlap.
+    </p>
+
+    <div id="status">idle</div>
+
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

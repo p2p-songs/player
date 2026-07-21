@@ -300,9 +300,16 @@ export class Engine {
         if (!getItem(this.queue, id) || !this.ownsResolution(stamp)) return;
         if (outcome.ok) {
           const picked = pickPlayable(outcome.streams, 0);
-          this.queue = picked
-            ? setResolution(this.queue, id, resolvedFrom(outcome.streams, picked.idx, picked.url))
-            : setResolution(this.queue, id, { status: "failed", reason: "no playable stream" });
+          if (picked) {
+            this.queue = setResolution(this.queue, id, resolvedFrom(outcome.streams, picked.idx, picked.url));
+            // Hand the *immediate* next item's URL to the idle audio element so the
+            // browser buffers its opening while the current track plays (§5.2) —
+            // this is what makes the dual-element swap gapless. One idle element,
+            // so only the very next item is preloaded.
+            if (upNext(this.queue)[0] === id) this.audio.preload(picked.url, stampKey(stamp));
+          } else {
+            this.queue = setResolution(this.queue, id, { status: "failed", reason: "no playable stream" });
+          }
         } else {
           this.queue = setResolution(this.queue, id, { status: "failed", ...(outcome.reason ? { reason: outcome.reason } : {}) });
         }

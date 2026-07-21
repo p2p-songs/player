@@ -13,6 +13,7 @@ export class FakeAudio implements AudioBackend {
   playing = false;
   readonly loadHistory: { url: string; token: string }[] = [];
   readonly preloadHistory: { url: string; token: string }[] = [];
+  readonly crossfadeHistory: { url: string; token: string; durationMs: number }[] = [];
 
   subscribe(handler: (event: AudioEvent) => void): () => void {
     this.handler = handler;
@@ -28,6 +29,11 @@ export class FakeAudio implements AudioBackend {
   }
   preload(url: string, token: string): void {
     this.preloadHistory.push({ url, token });
+  }
+  crossfadeTo(url: string, token: string, durationMs: number): void {
+    this.crossfadeHistory.push({ url, token, durationMs });
+    this.current = { url, token };
+    this.playing = true;
   }
   play(): void {
     this.playing = true;

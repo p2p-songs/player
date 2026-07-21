@@ -12,9 +12,21 @@ importers:
         specifier: link:../addon-sdk/packages/protocol
         version: link:../addon-sdk/packages/protocol
     devDependencies:
+      '@p2p-songs/addon-sdk':
+        specifier: link:../addon-sdk/packages/sdk
+        version: link:../addon-sdk/packages/sdk
+      '@p2p-songs/musicmeta':
+        specifier: link:../addons/packages/musicmeta
+        version: link:../addons/packages/musicmeta
+      '@p2p-songs/stream-legal':
+        specifier: link:../addons/packages/stream-legal
+        version: link:../addons/packages/stream-legal
       typescript:
         specifier: ^5.6.3
         version: 5.9.3
+      vite:
+        specifier: ^5.4.21
+        version: 5.4.21
       vitest:
         specifier: ^2.1.8
         version: 2.1.9

@@ -23,6 +23,12 @@ export interface AudioBackend {
   seek(ms: number): void;
   /** Buffer the next track on the idle element ahead of time. */
   preload(url: string, token: string): void;
+  /**
+   * Transition to `url` (tagged `token`) by overlapping the two elements and
+   * ramping their volumes over `durationMs` — the deliberate-crossfade path
+   * (§4c). The incoming element becomes active immediately (it drives events).
+   */
+  crossfadeTo(url: string, token: string, durationMs: number): void;
   /** Stop and release the active element. */
   stop(): void;
   /** Subscribe to backend events; returns an unsubscribe. */

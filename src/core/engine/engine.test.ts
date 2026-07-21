@@ -38,6 +38,20 @@ describe("happy path + prefetch", () => {
     expect(res(engine, "q3").status).toBe("resolved");
   });
 
+  it("preloads the immediate-next item's URL into the idle audio element (§5.2)", async () => {
+    const { engine, audio } = makeEngine(3);
+    engine.play();
+    await flush();
+    audio.emitLoaded(); // → playing → prefetch upcoming
+    await flush();
+    const q2 = res(engine, "q2");
+    const q3 = res(engine, "q3");
+    expect(q2.status).toBe("resolved");
+    const preloaded = audio.preloadHistory.map((p) => p.url);
+    if (q2.status === "resolved") expect(preloaded).toContain(q2.url); // immediate next: preloaded
+    if (q3.status === "resolved") expect(preloaded).not.toContain(q3.url); // 2nd-out: not (one idle element)
+  });
+
   it("on ended it auto-advances to the prefetched next item", async () => {
     const { engine, audio } = makeEngine(3);
     engine.play();

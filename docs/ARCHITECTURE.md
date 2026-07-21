@@ -265,10 +265,12 @@ the UI looks busy. Rules:
   clears backoff), so "this track isn't here" never looks like "this addon is
   down." Transport classification (unreachable/5xx/auth/malformed → back off;
   404/benign-4xx/empty → no match) lives in `core/addon/http.ts`.
-- *Deferred (needs real playback timing → P-2):* the **"~30 s remaining"
-  re-prefetch safety net** (§5.1) — P-1/P-3 prefetch on entering `playing` only;
-  the position-triggered top-up lands with the real `<audio>` backend's
-  `timeupdate` events.
+- *Deferred (position-triggered, needs real playback timing):* the **"~30 s
+  remaining" re-prefetch safety net** (§5.1) and the **anticipatory crossfade
+  trigger** (§4c) both belong here — P-1/P-2/P-3 prefetch on entering `playing`
+  only, and the crossfade *mechanism* exists but is triggered manually. Both land
+  when a position monitor watches the real `<audio>` `timeupdate` stream against
+  `track.durationMs`.
 
 **Decision: a hand-rolled discriminated-union finite state machine** (state
 is a union like `{ status: "playing"; … } | { status: "resolving"; … }`;
@@ -333,6 +335,36 @@ Key web-specific reasoning:
 - The subsystem exposes a narrow interface (`load(url)`, `play()`,
   `pause()`, `seek(ms)`, `preload(url)`, `crossfadeTo(url)`, events) so the
   machine can be tested against a **fake** implementation with no DOM.
+
+**Implemented (P-2): `src/core/audio/html-audio.ts` + `media-session.ts`.**
+- **`HtmlAudioBackend`** implements the interface over **two ping-ponged media
+  elements**. `preload` buffers the next URL on the idle element (silent);
+  `load` of a preloaded URL **swaps** to it instead of reloading — gapless via
+  element swap. Every `load`/`preload` tags its element with the engine token;
+  events echo that element's current token, so a late `loaded`/`ended`/`error`
+  is dropped by identity (§4b). `ended`/`position` come only from the active
+  element. A rejected `play()` (autoplay policy / load-play race) is swallowed —
+  genuine media failures arrive via the `error` event.
+- **`crossfadeTo`** is the deliberate-overlap path: it starts the incoming
+  element and ramps the two `element.volume`s over the window (injectable ticker
+  → unit-tested without real time), never Web Audio (CORS, above). A superseding
+  `load`/`stop` silences the outgoing element so nothing keeps playing under it.
+- **Engine preload wiring (§5.2):** on a successful prefetch of the *immediate*
+  next item, the engine now calls `audio.preload` so the swap is live in real
+  playback (one idle element ⇒ only the very next item).
+- **MediaSession** (`bindMediaSession`) mirrors the current track's metadata +
+  play/pause state to `navigator.mediaSession` and routes its action handlers
+  (play/pause/next/prev/seek/stop) back into engine commands; it degrades to a
+  no-op where the platform has none, and is unit-tested against a fake session.
+- **To *hear* it:** a throwaway Vite harness (`harness/`) drives the real backend
+  with hardcoded direct URLs (§10 P-2) for the manual audible smoke — the one
+  thing headless tests can't assert. All backend/crossfade/MediaSession *logic*
+  is unit-tested in node against injected fakes (`MediaElementLike`, a fake
+  ticker, a fake session).
+- **Deferred:** the **anticipatory crossfade *trigger*** (auto-start the fade N
+  seconds before a track ends) rides with the position-timing work (§4b, the
+  same bucket as the "~30 s remaining" re-prefetch net); the crossfade
+  *mechanism* is done and the default advance is gapless-via-swap on `ended`.
 
 ---
 
@@ -901,6 +933,16 @@ Cross-repo note: **P-1 and P-2 have no external dependency** and can start
 immediately. P-3 onward needs `addon-sdk` and at least `stream-legal` /
 `musicmeta` from the `addons` repo to exist for real integration (fakes carry
 P-1/P-2).
+
+**P-2 status — DONE (2026-07-21).** The real audio subsystem
+(`src/core/audio/html-audio.ts`, `media-session.ts`) is built behind the
+existing `AudioBackend` interface: dual-element preload→swap (gapless), tokened
+events, `element.volume` crossfade (unit-tested via an injected ticker), engine
+preload wiring (§5.2), and MediaSession. All *logic* is unit-tested headlessly
+against injected fakes; a throwaway Vite harness (`harness/`) covers the manual
+audible smoke with hardcoded direct URLs. The anticipatory crossfade trigger is
+deferred to the position-timing work (§4b/§4c). **121 player tests; typecheck +
+`vite build` green.**
 
 **P-3 status — DONE for the headless slice (2026-07-21).** The addon client
 (`src/core/addon/`) is built: transport with outage-vs-empty classification, the

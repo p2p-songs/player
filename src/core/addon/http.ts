@@ -53,6 +53,16 @@ export class AddonProtocolError extends Error {
   }
 }
 
+/** True for an `AbortController`-driven cancellation (the caller's signal fired). */
+export function isAbortError(err: unknown): boolean {
+  return err instanceof DOMException && err.name === "AbortError";
+}
+
+/** A provider-wide fault (down / auth / 5xx / malformed) — as opposed to a per-track empty answer. */
+export function isProviderDown(err: unknown): boolean {
+  return err instanceof AddonUnreachableError || err instanceof AddonProtocolError;
+}
+
 /** Statuses that mean "provider down/limited for us" → back off, don't retry per track. */
 function isUnreachableStatus(status: number): boolean {
   // 5xx: server broken. 401/403: auth failing (a configured key gone bad).

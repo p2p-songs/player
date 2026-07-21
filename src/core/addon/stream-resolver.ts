@@ -15,12 +15,15 @@
  * Neutrality (§11): it knows nothing addon-specific — every provider is called
  * through the generic protocol client and judged only by what it returns.
  */
-import type { Stream } from "@p2p-songs/protocol";
+import type { Stream, StreamRequest } from "@p2p-songs/protocol";
 import type { TrackRef } from "../queue/types.js";
 import type { Resolver, ResolveOutcome } from "../scheduler/resolver.js";
 import type { AddonClient } from "./client.js";
-import { AddonUnreachableError, AddonProtocolError } from "./http.js";
+import { isAbortError, isProviderDown } from "./http.js";
 import { ProviderHealth, type ProviderHealthOptions } from "./provider-health.js";
+
+/** How long to wait for a single provider before treating it as unreachable. */
+const DEFAULT_PROVIDER_TIMEOUT_MS = 15000;
 
 export interface AddonStreamResolverOptions extends ProviderHealthOptions {
   /**
@@ -28,15 +31,30 @@ export interface AddonStreamResolverOptions extends ProviderHealthOptions {
    * fixed array) so installs/removals in the collection are reflected live.
    */
   providers: () => AddonClient[];
+  /**
+   * Per-provider deadline (ms). A provider that hasn't answered within it is
+   * aborted and classified as unreachable → backed off, so one hung addon can
+   * never stall the whole resolve (audit A-008). Default 15s.
+   */
+  providerTimeoutMs?: number;
 }
+
+/** The bounded outcome of asking one provider for streams — never rejects. */
+type ProviderResult =
+  | { kind: "ok"; streams: Stream[] }
+  | { kind: "down" } // unreachable / 5xx / auth / malformed / timed out
+  | { kind: "aborted" } // the outer (scheduler) signal fired — a supersede/skip
+  | { kind: "fatal"; error: unknown };
 
 export class AddonStreamResolver implements Resolver {
   private readonly providers: () => AddonClient[];
   private readonly health: ProviderHealth;
+  private readonly providerTimeoutMs: number;
 
   constructor(opts: AddonStreamResolverOptions) {
     this.providers = opts.providers;
     this.health = new ProviderHealth(opts);
+    this.providerTimeoutMs = opts.providerTimeoutMs ?? DEFAULT_PROVIDER_TIMEOUT_MS;
   }
 
   async resolve(track: TrackRef, signal: AbortSignal): Promise<ResolveOutcome> {
@@ -44,7 +62,7 @@ export class AddonStreamResolver implements Resolver {
       recordingId: track.recordingId,
       ...(track.trackId ? { trackId: track.trackId } : {}),
       ...(track.releaseId ? { releaseId: track.releaseId } : {}),
-    };
+    } as StreamRequest;
 
     // Which installed addons can even answer for this recording?
     const capable = this.providers().filter(
@@ -56,14 +74,15 @@ export class AddonStreamResolver implements Resolver {
     const eligible = capable.filter((a) => !this.health.isBackedOff(a.id));
     if (eligible.length === 0) return { ok: false, reason: "stream addons backing off" };
 
-    const results = await Promise.allSettled(
-      // safeParse in the client guarantees StreamRequest shape; cast is at the seam only.
-      eligible.map((addon) => addon.getStreams(req as Parameters<AddonClient["getStreams"]>[0], signal)),
-    );
+    // Ask every eligible provider under its OWN bounded deadline. Each call
+    // resolves within `providerTimeoutMs` even if the addon accepts the
+    // connection and then hangs, so `Promise.all` here always completes — one
+    // stalled provider can never wedge the whole resolution (audit A-008).
+    const results = await Promise.all(eligible.map((addon) => this.askProvider(addon, req, signal)));
 
     // A supervening skip/reorder aborted us mid-flight; the scheduler's stamp
-    // gate will drop this anyway, but reporting it as a non-result avoids
-    // mutating provider health on a cancellation.
+    // gate will drop this anyway, but returning early avoids mutating provider
+    // health on a cancellation.
     if (signal.aborted) return { ok: false, reason: "cancelled" };
 
     const merged: Stream[] = [];
@@ -71,14 +90,19 @@ export class AddonStreamResolver implements Resolver {
     for (let i = 0; i < eligible.length; i++) {
       const addon = eligible[i]!;
       const r = results[i]!;
-      if (r.status === "fulfilled") {
-        anyReachable = true;
-        this.health.recordReachable(addon.id); // reachable — even an empty answer clears backoff
-        for (const s of r.value) if (typeof s.url === "string") merged.push(s);
-      } else if (isProviderDown(r.reason)) {
-        this.health.recordFailure(addon.id); // addon-wide problem → back it off
-      } else {
-        throw r.reason; // AbortError or an unexpected non-addon error: don't swallow
+      switch (r.kind) {
+        case "ok":
+          anyReachable = true;
+          this.health.recordReachable(addon.id); // reachable — even an empty answer clears backoff
+          for (const s of r.streams) if (typeof s.url === "string") merged.push(s);
+          break;
+        case "down":
+          this.health.recordFailure(addon.id); // addon-wide problem (incl. timeout) → back it off
+          break;
+        case "aborted":
+          return { ok: false, reason: "cancelled" };
+        case "fatal":
+          throw r.error; // an unexpected non-addon error: don't swallow
       }
     }
 
@@ -89,13 +113,39 @@ export class AddonStreamResolver implements Resolver {
       : { ok: false, reason: "stream addons unavailable" };
   }
 
+  /**
+   * Ask one provider for streams, bounded by `providerTimeoutMs` and the outer
+   * signal, never rejecting. A timeout is classified as `down` (the addon is
+   * unreachable *for us*), distinct from an outer-signal cancellation (`aborted`,
+   * which must not accrue backoff — the user skipped, the addon didn't fail).
+   */
+  private async askProvider(addon: AddonClient, req: StreamRequest, outerSignal: AbortSignal): Promise<ProviderResult> {
+    const child = new AbortController();
+    const onOuterAbort = () => child.abort();
+    if (outerSignal.aborted) child.abort();
+    else outerSignal.addEventListener("abort", onOuterAbort, { once: true });
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.abort();
+    }, this.providerTimeoutMs);
+    try {
+      const streams = await addon.getStreams(req, child.signal);
+      return { kind: "ok", streams };
+    } catch (err) {
+      if (outerSignal.aborted) return { kind: "aborted" }; // outer cancel wins over our timeout
+      if (timedOut) return { kind: "down" }; // hung past its deadline → treat as unreachable
+      if (isProviderDown(err)) return { kind: "down" };
+      if (isAbortError(err)) return { kind: "aborted" }; // defensive: some other abort
+      return { kind: "fatal", error: err };
+    } finally {
+      clearTimeout(timer);
+      outerSignal.removeEventListener("abort", onOuterAbort);
+    }
+  }
+
   /** Ms until `addonId` is eligible again (test/telemetry aid). */
   backoffRemainingMs(addonId: string): number {
     return this.health.backoffRemainingMs(addonId);
   }
-}
-
-/** An addon-wide fault (down / auth / 5xx / malformed) — as opposed to a per-track empty answer. */
-function isProviderDown(err: unknown): boolean {
-  return err instanceof AddonUnreachableError || err instanceof AddonProtocolError;
 }

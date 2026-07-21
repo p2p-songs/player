@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { AddonCollection } from "./collection.js";
+import { AddonUnreachableError } from "./http.js";
 import { FakeHttp } from "./fake-http.js";
 import type { Manifest } from "@p2p-songs/protocol";
 
@@ -62,6 +63,74 @@ describe("AddonCollection", () => {
     await collection.install(metaUrl);
     await collection.install(streamUrl);
     expect(collection.streamProviders().map((c) => c.id)).toEqual(["stream"]);
+  });
+
+  // --- metadata fault isolation (audit A-008) ---
+
+  const metaManifest = (id: string) =>
+    manifest({ id, resources: ["meta"], types: ["artist"], idPrefixes: ["mbid:artist:"] });
+
+  const validMeta = { status: 200, body: { meta: { type: "artist", id: ARTIST, name: "The Artist" } } };
+
+  /** Install two meta addons (m1 then m2) with scripted /meta routes. */
+  async function twoMetaProviders(
+    http: FakeHttp,
+    m1: () => { status: number; body: unknown },
+    m2: () => { status: number; body: unknown },
+  ): Promise<AddonCollection> {
+    const collection = new AddonCollection({ httpGet: http.get });
+    http.on("https://m1.example/manifest.json", () => ({ status: 200, body: metaManifest("m1") }));
+    http.on("https://m2.example/manifest.json", () => ({ status: 200, body: metaManifest("m2") }));
+    http.when((u) => u.startsWith("https://m1.example/meta/"), m1);
+    http.when((u) => u.startsWith("https://m2.example/meta/"), m2);
+    await collection.install("https://m1.example/manifest.json");
+    await collection.install("https://m2.example/manifest.json");
+    return collection;
+  }
+
+  it("falls through a DOWN first provider to a healthy second", async () => {
+    const http = new FakeHttp();
+    const collection = await twoMetaProviders(http, () => ({ status: 503, body: {} }), () => validMeta);
+    const meta = await collection.getMeta("artist", ARTIST);
+    expect(meta?.name).toBe("The Artist");
+    // the healthy provider was actually queried
+    expect(http.requests.some((u) => u.startsWith("https://m2.example/meta/"))).toBe(true);
+  });
+
+  it("falls through a MALFORMED first provider to a healthy second", async () => {
+    const http = new FakeHttp();
+    const collection = await twoMetaProviders(http, () => ({ status: 200, body: { meta: { id: "x" } } }), () => validMeta);
+    await expect(collection.getMeta("artist", ARTIST)).resolves.toMatchObject({ name: "The Artist" });
+  });
+
+  it("falls through an EMPTY (reachable) first provider to a healthy second", async () => {
+    const http = new FakeHttp();
+    const collection = await twoMetaProviders(http, () => ({ status: 404, body: { err: "not found" } }), () => validMeta);
+    await expect(collection.getMeta("artist", ARTIST)).resolves.toMatchObject({ name: "The Artist" });
+  });
+
+  it("throws AddonUnreachableError only when NO provider is reachable", async () => {
+    const http = new FakeHttp();
+    const collection = await twoMetaProviders(http, () => ({ status: 503, body: {} }), () => ({ status: 500, body: {} }));
+    await expect(collection.getMeta("artist", ARTIST)).rejects.toBeInstanceOf(AddonUnreachableError);
+  });
+
+  it("returns undefined (not an error) when reachable providers simply have no meta", async () => {
+    const http = new FakeHttp();
+    const collection = await twoMetaProviders(
+      http,
+      () => ({ status: 404, body: {} }),
+      () => ({ status: 404, body: {} }),
+    );
+    await expect(collection.getMeta("artist", ARTIST)).resolves.toBeUndefined();
+  });
+
+  it("propagates cancellation instead of masking it as a provider fault", async () => {
+    const http = new FakeHttp();
+    const collection = await twoMetaProviders(http, () => validMeta, () => validMeta);
+    const ac = new AbortController();
+    ac.abort();
+    await expect(collection.getMeta("artist", ARTIST, ac.signal)).rejects.toMatchObject({ name: "AbortError" });
   });
 
   it("getMeta resolves from the first matching meta provider", async () => {

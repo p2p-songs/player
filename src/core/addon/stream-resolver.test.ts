@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { AddonClient } from "./client.js";
 import { AddonStreamResolver } from "./stream-resolver.js";
-import { FakeHttp, type FakeHandler } from "./fake-http.js";
+import { FakeHttp, abortError, type FakeHandler } from "./fake-http.js";
 import type { Manifest } from "@p2p-songs/protocol";
 import type { TrackRef } from "../queue/types.js";
 
@@ -37,6 +37,12 @@ async function installStreamAddon(
 const okStream = (url: string): FakeHandler => () => ({ status: 200, body: { streams: [{ url, name: url }] } });
 const empty: FakeHandler = () => ({ status: 200, body: { streams: [] } });
 const down: FakeHandler = () => ({ status: 503, body: {} });
+/** Accepts the connection then never answers — only rejects when its signal aborts (the deadline). */
+const hang: FakeHandler = (_url, signal) =>
+  new Promise((_resolve, reject) => {
+    if (signal?.aborted) reject(abortError());
+    else signal?.addEventListener("abort", () => reject(abortError()), { once: true });
+  });
 
 function newSignal(): AbortSignal {
   return new AbortController().signal;
@@ -131,6 +137,46 @@ describe("AddonStreamResolver", () => {
     const out = await resolver.resolve(track, newSignal());
     expect(out.ok).toBe(true);
     expect(resolver.backoffRemainingMs("a")).toBe(0); // reachable cleared it
+  });
+
+  // --- bounded fan-out: one hung provider must not wedge the resolve (audit A-008) ---
+
+  it("returns a healthy provider's stream while a hung provider times out and is backed off", async () => {
+    const http = new FakeHttp();
+    const a = await installStreamAddon(http, "a", "https://a.example", hang);
+    const b = await installStreamAddon(http, "b", "https://b.example", okStream("https://b.cdn/y.flac"));
+    const resolver = new AddonStreamResolver({ providers: () => [a, b], providerTimeoutMs: 20, baseMs: 1000, now: () => 0 });
+
+    const out = await resolver.resolve(track, newSignal());
+    expect(out.ok).toBe(true);
+    if (out.ok) expect(out.streams.map((s) => s.url)).toEqual(["https://b.cdn/y.flac"]);
+    expect(resolver.backoffRemainingMs("a")).toBe(1000); // hung → classified down → backed off
+    expect(resolver.backoffRemainingMs("b")).toBe(0);
+  });
+
+  it("bounds an all-hung fan-out and backs every provider off", async () => {
+    const http = new FakeHttp();
+    const a = await installStreamAddon(http, "a", "https://a.example", hang);
+    const b = await installStreamAddon(http, "b", "https://b.example", hang);
+    const resolver = new AddonStreamResolver({ providers: () => [a, b], providerTimeoutMs: 20, baseMs: 1000, now: () => 0 });
+
+    const out = await resolver.resolve(track, newSignal());
+    expect(out).toEqual({ ok: false, reason: "stream addons unavailable" });
+    expect(resolver.backoffRemainingMs("a")).toBe(1000);
+    expect(resolver.backoffRemainingMs("b")).toBe(1000);
+  });
+
+  it("a skip during a hang is a cancellation, not a provider fault", async () => {
+    const http = new FakeHttp();
+    const a = await installStreamAddon(http, "a", "https://a.example", hang);
+    // Long provider deadline; the outer signal aborts first.
+    const resolver = new AddonStreamResolver({ providers: () => [a], providerTimeoutMs: 1000, now: () => 0 });
+
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 10);
+    const out = await resolver.resolve(track, controller.signal);
+    expect(out).toEqual({ ok: false, reason: "cancelled" });
+    expect(resolver.backoffRemainingMs("a")).toBe(0); // user skipped — the addon didn't fail
   });
 
   it("reports a cancellation without mutating provider health", async () => {

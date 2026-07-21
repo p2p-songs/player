@@ -78,10 +78,10 @@ typecheck + build green.**
 **A-007 (2026-07-20) reconciled.** consecutive-threshold vs sweep-set is a
 deliberate simplification (still current). 46 tests at P-1.
 
-**P-3 headless slice — DONE (2026-07-21).** The real addon client
-(**`src/core/addon/`**) — the player's HTTP+JSON consumer of installed addons —
-now fills the `Resolver` seam the P-1 fake occupied. **88 tests; typecheck +
-build + live-HTTP e2e green.**
+**P-3 headless slice — DONE (2026-07-21); A-008 reconciled.** The real addon
+client (**`src/core/addon/`**) — the player's HTTP+JSON consumer of installed
+addons — now fills the `Resolver` seam the P-1 fake occupied. **97 tests;
+typecheck + build + live-HTTP e2e green.**
 - **`http.ts`** — narrow injectable transport + the **outage-vs-empty**
   classification everything else keys off: network/5xx/auth/malformed → provider
   down; 404/benign-4xx → "no answer" (not an outage).
@@ -95,11 +95,16 @@ build + live-HTTP e2e green.**
 - **`provider-health.ts` + `stream-resolver.ts`** — `AddonStreamResolver`
   (`implements Resolver`): fan `/stream` across stream addons, merge url-bearing
   streams, **provider-wide exponential backoff** (the P-3 half of "failure is
-  bounded", §4b — distinguishes a down addon from a track that isn't there). It
-  stays a *plain* resolver; the command-plane semantics (§5a) remain the
-  Scheduler's job.
+  bounded", §4b — distinguishes a down addon from a track that isn't there).
+  **Each provider runs under its own bounded, abortable deadline
+  (`providerTimeoutMs`) and results never reject (audit A-008)** — one hung addon
+  can't wedge the resolve; a timeout → unreachable/backoff, an outer-signal skip →
+  cancelled (no backoff). It stays a *plain* resolver; the command-plane
+  semantics (§5a) remain the Scheduler's job.
 - **`collection.ts`** — `AddonCollection`: install-by-URL (no bundled addon,
-  §11), plane views (`streamProviders()`, `getMeta`).
+  §11), plane views (`streamProviders()`, `getMeta`). **`getMeta` isolates a
+  down/malformed provider and falls through to the next capable addon (audit
+  A-008)**, surfacing an aggregate error only when none was reachable.
 - **`tests/e2e-addon.test.ts`** — boots the **real** `stream-legal` + `musicmeta`
   (built with the real SDK) over **real HTTP** with fixture-injected upstreams;
   drives `AddonCollection` + `AddonStreamResolver` + `Engine` end to end

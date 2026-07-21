@@ -406,7 +406,16 @@ expiry, failure, and duplicate/late completion.
 seam that P-1 filled with a fake is now the `AddonStreamResolver`, which fans
 `/stream` out across the installed stream addons over real HTTP, merges the
 url-bearing streams into one ranked list, and applies provider-wide backoff
-(§4b). It stays a **plain** resolver — no caching, no retry — precisely because
+(§4b). **Fault isolation is per-provider at both planes (audit A-008):** the
+stream resolver asks each addon under its own **bounded, abortable deadline**
+(`providerTimeoutMs`) and aggregates over results that never reject, so one hung
+addon can never wedge the resolve — a timeout is classified as unreachable
+(→ backoff), distinct from a scheduler cancellation (no backoff). Likewise the
+metadata plane's `AddonCollection.getMeta` isolates a down/malformed provider and
+falls through to the next capable addon, surfacing an aggregate failure only when
+*no* provider was reachable (so a single flaky metadata addon can't shadow the
+healthy ones installed after it). It stays a **plain** resolver — no caching, no
+retry — precisely because
 the command-plane semantics §5a demands (dedup by operation id, no
 retry/refetch, memory-only, §4b stamping) are the *scheduler's* job; keeping
 them there is why the seam exists. `AddonClient` validates every addon response

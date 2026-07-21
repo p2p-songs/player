@@ -179,13 +179,45 @@ The addon devDeps are wired as `node_modules/@p2p-songs/*` symlinks (like
   hydrate-on-boot) belongs with the app shell in **P-5**; playlist item-grain
   modelling is a P-7 sync refinement (§6b).
 
-Next: **P-5** (UI: search/browse, now-playing, queue, library, addon manager +
-the theming seam — and the first thing with a lifecycle to hang persistence
-autosave/hydration on). A small **position-timing** follow-up would close three
-deferrals at once (a monitor over the real `timeupdate` stream vs
-`track.durationMs`): the ~30 s re-prefetch net, the anticipatory crossfade
-trigger (§4c), and precise `setPositionState`. Also deferred: cross-provider
-stream ranking, TanStack Query wrapper (P-5).
+**P-5 app (minimal e2e slice) — DONE (2026-07-21).** **172 tests; typecheck +
+`vite build` green; verified by hand against live `musicmeta` + `stream-legal`.**
+The app is a React/Vite shell at `index.html` → `src/app/main.tsx`.
+- **`src/app/`** — composition root. `services.ts` picks the concrete browser
+  implementations (`HtmlAudioBackend`, `DexieStore`, real `fetch`) so `src/core`
+  stays platform-agnostic; `providers.tsx` holds the **TanStack Query client**,
+  finally closing §5a's deferred metadata-plane policy (`/stream` still never
+  goes through it); `store.ts` is the tiny Zustand UI store.
+- **`src/ui/`** — `tokens.css` (the one reference theme, "Dark (Espresso)"),
+  `viewmodels/` (headless hooks over the engine — components own no playback
+  logic, §8a), `components/`, `screens/`.
+- **Screens:** Addons (install by manifest URL only — nothing bundled, §11;
+  URLs shown via `redactManifestUrl`, §6a), Search (cross-addon, Songs/Albums),
+  Album detail, Home (recently played from history), Library (liked), minimal
+  Settings, plus the queue drawer and persistent player bar.
+- **`usePersistSession`** wires the repository to the engine — the P-4 deferral:
+  hydrate the queue on boot, debounced autosave, record plays. Needed
+  **`Engine.restoreQueue`** so a restored session keeps its *stable ids* instead
+  of rebuilding them (and forces every item back to `idle`).
+- **`Engine.getState()` is now referentially stable** — it memoizes until
+  `queue`/`playback` actually change. Returning a fresh object each call made
+  `useSyncExternalStore` loop infinitely; snapshot stability is an engine
+  contract, not a UI workaround. Regression-tested.
+- **`HtmlAudioBackend.setVolume`** — master volume composed with the crossfade
+  gain (`element.volume = master × gain`) so the two don't overwrite each other.
+- **Failure is visible:** `PlaybackAlert` surfaces the resolver's actual reason
+  ("no source has this track" vs "no stream addon installed" vs "addons
+  unreachable"). Silent failure was the worst bug found in manual testing.
+- **Deliberately not built:** router (nav is local state), theme *contract/
+  registry* (only the token layer — one theme, so the seam isn't earned yet),
+  source-picker modal, Artists/Playlists tabs.
+
+Next: **P-6** (PWA) or **P-7** (accounts/sync), or fill the addon gap —
+`stream-debrid` / `stream-ytmusic` are still unbuilt, and with only
+`stream-legal` most searched tracks legitimately have no source. A small
+**position-timing** follow-up would close three deferrals at once (a monitor over
+the real `timeupdate` stream vs `track.durationMs`): the ~30 s re-prefetch net,
+the anticipatory crossfade trigger (§4c), and precise `setPositionState`. Also
+deferred: cross-provider stream ranking.
 Build order: [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) §10.
 
 ## Being audited?

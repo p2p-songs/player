@@ -1,14 +1,15 @@
 import { defineConfig, searchForWorkspaceRoot } from "vite";
+import react from "@vitejs/plugin-react";
 
 /**
- * Config for the throwaway P-2 audio harness only (`harness/`). Not the app
- * build — that's P-5. Root is the harness; the dev server is allowed to read the
- * sibling `src/` so the harness can import the real engine/audio modules.
+ * The player app (ARCHITECTURE §7). Root is the repo root, so `index.html` boots
+ * `src/app/main.tsx`. The throwaway P-2 audio harness still lives at
+ * `harness/index.html` and stays reachable in dev at `/harness/` — it predates
+ * the app and is kept only for the manual audible smoke.
  */
 export default defineConfig({
-  root: "harness",
+  plugins: [react()],
   server: {
-    open: true,
     fs: { allow: [searchForWorkspaceRoot(process.cwd())] },
   },
   build: { outDir: "dist", emptyOutDir: true },

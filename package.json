@@ -7,20 +7,27 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json --noEmit && vite build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "harness": "vite",
-    "harness:build": "vite build"
+    "harness": "vite --open /harness/"
   },
   "dependencies": {
     "@p2p-songs/protocol": "link:../addon-sdk/packages/protocol",
-    "dexie": "^4.0.10"
+    "@tanstack/react-query": "^5.101.3",
+    "dexie": "^4.0.10",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "zustand": "^5.0.14"
   },
   "devDependencies": {
     "@p2p-songs/addon-sdk": "link:../addon-sdk/packages/sdk",
     "@p2p-songs/musicmeta": "link:../addons/packages/musicmeta",
     "@p2p-songs/stream-legal": "link:../addons/packages/stream-legal",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^4.7.0",
     "fake-indexeddb": "^6.0.0",
     "typescript": "^5.6.3",
     "vite": "^5.4.21",

@@ -42,6 +42,12 @@ interface Slot {
   token: string | undefined;
   /** The URL currently loaded/preloaded in this element. */
   url: string | undefined;
+  /**
+   * This element's crossfade gain (0–1). The element's actual `volume` is always
+   * `master × gain`, so the user's volume setting and the fade ramp compose
+   * instead of overwriting each other.
+   */
+  gain: number;
   cleanup: () => void;
 }
 
@@ -52,6 +58,8 @@ export class HtmlAudioBackend implements AudioBackend {
   private handler: ((event: AudioEvent) => void) | undefined;
   private readonly ticker: Ticker;
   private cancelFade: (() => void) | undefined;
+  /** User-facing volume (0–1), applied on top of each slot's fade gain. */
+  private master = 1;
 
   constructor(factory: MediaElementFactory = defaultMediaElementFactory, ticker: Ticker = defaultTicker) {
     const a = this.makeSlot(factory());
@@ -60,6 +68,22 @@ export class HtmlAudioBackend implements AudioBackend {
     this.active = a;
     this.idle = b;
     this.ticker = ticker;
+  }
+
+  /** Set the user-facing volume (0–1). Composes with any in-flight crossfade. */
+  setVolume(volume: number): void {
+    this.master = clamp01(volume);
+    for (const slot of this.slots) this.applyGain(slot, slot.gain);
+  }
+
+  get volume(): number {
+    return this.master;
+  }
+
+  /** Record a slot's fade gain and push `master × gain` to the element. */
+  private applyGain(slot: Slot, gain: number): void {
+    slot.gain = clamp01(gain);
+    slot.el.volume = clamp01(this.master * slot.gain);
   }
 
   load(url: string, token: string): void {
@@ -80,7 +104,7 @@ export class HtmlAudioBackend implements AudioBackend {
       this.active.el.load();
     }
     this.active.token = token;
-    this.active.el.volume = 1;
+    this.applyGain(this.active, 1);
     // A swapped-in preloaded element may already be past `canplay`; its listener
     // won't re-fire, so surface readiness now (with the *current* attempt token).
     if (this.active.el.readyState >= HAVE_FUTURE_DATA) this.emit({ type: "loaded", token });
@@ -107,7 +131,7 @@ export class HtmlAudioBackend implements AudioBackend {
     this.idle.url = url;
     this.idle.token = token;
     this.idle.el.preload = "auto";
-    this.idle.el.volume = 0; // silent until it becomes active (or is crossfaded up)
+    this.applyGain(this.idle, 0); // silent until it becomes active (or is crossfaded up)
     this.idle.el.load();
   }
 
@@ -128,7 +152,7 @@ export class HtmlAudioBackend implements AudioBackend {
     const incoming = this.idle;
     const outgoing = this.active;
     incoming.token = token;
-    incoming.el.volume = 0;
+    this.applyGain(incoming, 0);
     void incoming.el.play().catch(() => {});
     // Commit the swap up front: the incoming element is now the one we track.
     this.active = incoming;
@@ -139,8 +163,8 @@ export class HtmlAudioBackend implements AudioBackend {
     this.cancelFade = this.ticker.every(FADE_STEP_MS, () => {
       i += 1;
       const t = Math.min(1, i / steps);
-      incoming.el.volume = t;
-      outgoing.el.volume = 1 - t;
+      this.applyGain(incoming, t);
+      this.applyGain(outgoing, 1 - t);
       if (i >= steps) this.endFade();
     });
   }
@@ -165,7 +189,7 @@ export class HtmlAudioBackend implements AudioBackend {
     this.cancelFade();
     this.cancelFade = undefined;
     this.idle.el.pause();
-    this.idle.el.volume = 1;
+    this.applyGain(this.idle, 1);
   }
 
   subscribe(handler: (event: AudioEvent) => void): () => void {
@@ -182,7 +206,7 @@ export class HtmlAudioBackend implements AudioBackend {
   }
 
   private makeSlot(el: MediaElementLike): Slot {
-    const slot: Slot = { el, token: undefined, url: undefined, cleanup: () => {} };
+    const slot: Slot = { el, token: undefined, url: undefined, gain: 1, cleanup: () => {} };
     const onCanPlay = () => {
       if (slot.token) this.emit({ type: "loaded", token: slot.token });
     };
@@ -213,4 +237,9 @@ export class HtmlAudioBackend implements AudioBackend {
   private emit(event: AudioEvent): void {
     this.handler?.(event);
   }
+}
+
+/** Clamp to the 0–1 range a media element's `volume` accepts. */
+function clamp01(v: number): number {
+  return Math.min(1, Math.max(0, Number.isFinite(v) ? v : 0));
 }

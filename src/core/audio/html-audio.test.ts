@@ -198,6 +198,52 @@ describe("HtmlAudioBackend — dual-element preload & swap (gapless core)", () =
   });
 });
 
+describe("HtmlAudioBackend — master volume", () => {
+  it("scales the active element and survives a load", () => {
+    const { a, backend } = setup();
+    backend.load("https://cdn/x.flac", "tok1");
+    backend.setVolume(0.5);
+    expect(a.volume).toBeCloseTo(0.5);
+    backend.load("https://cdn/y.flac", "tok2"); // a fresh load keeps the user's setting
+    expect(a.volume).toBeCloseTo(0.5);
+    expect(backend.volume).toBe(0.5);
+  });
+
+  it("clamps out-of-range values", () => {
+    const { a, backend } = setup();
+    backend.load("https://cdn/x.flac", "tok1");
+    backend.setVolume(5);
+    expect(a.volume).toBe(1);
+    backend.setVolume(-2);
+    expect(a.volume).toBe(0);
+  });
+
+  it("composes with a crossfade instead of overwriting it", () => {
+    const { a, b, backend, ticker } = setup();
+    backend.setVolume(0.5);
+    backend.load("https://cdn/cur.flac", "cur");
+    backend.preload("https://cdn/next.flac", "next");
+    backend.crossfadeTo("https://cdn/next.flac", "attempt2", 100); // 2 steps
+
+    ticker.tick(); // mid-fade: gains are 0.5/0.5, master 0.5 → 0.25 each
+    expect(b.volume).toBeCloseTo(0.25);
+    expect(a.volume).toBeCloseTo(0.25);
+
+    ticker.tick(); // fade complete: incoming at full gain × master
+    expect(b.volume).toBeCloseTo(0.5);
+  });
+
+  it("applies a volume change made during a crossfade", () => {
+    const { b, backend, ticker } = setup();
+    backend.load("https://cdn/cur.flac", "cur");
+    backend.preload("https://cdn/next.flac", "next");
+    backend.crossfadeTo("https://cdn/next.flac", "attempt2", 100);
+    ticker.tick(2); // fade done, incoming gain 1
+    backend.setVolume(0.25);
+    expect(b.volume).toBeCloseTo(0.25);
+  });
+});
+
 describe("HtmlAudioBackend — crossfade (volume automation)", () => {
   it("ramps the incoming element up and the outgoing one down over the window", () => {
     const { a, b, backend, ticker } = setup();

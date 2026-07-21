@@ -83,6 +83,8 @@ export class Engine {
   /** Consecutive across-item failures with no successful play in between. */
   private consecutiveFailures = 0;
   private readonly listeners = new Set<(state: EngineState) => void>();
+  /** Memoized `getState()` result, invalidated when `queue`/`playback` change. */
+  private cachedState: EngineState | undefined;
 
   constructor(resolver: Resolver, audio: AudioBackend, options: EngineOptions = {}) {
     this.scheduler = new Scheduler(resolver);
@@ -99,8 +101,20 @@ export class Engine {
 
   // --- public state ---
 
+  /**
+   * The current state. The returned object is **referentially stable** until
+   * `queue` or `playback` actually changes — both are replaced immutably, so
+   * identity comparison is exact. Returning a fresh object on every call would
+   * make any snapshot-based subscriber (React's `useSyncExternalStore`, a memo,
+   * a diffing store) believe the state changed constantly and re-render forever.
+   */
   getState(): EngineState {
-    return { queue: this.queue, playback: this.playback };
+    const cached = this.cachedState;
+    if (cached !== undefined && cached.queue === this.queue && cached.playback === this.playback) {
+      return cached;
+    }
+    this.cachedState = { queue: this.queue, playback: this.playback };
+    return this.cachedState;
   }
 
   subscribe(listener: (state: EngineState) => void): () => void {
@@ -124,6 +138,29 @@ export class Engine {
     this.loadTokens.clear();
     this.resetBreaker();
     this.dispatch({ type: "RESET", epoch: this.epoch });
+  }
+
+  /**
+   * Restore a persisted queue (§6), preserving its **identity** — the stable
+   * `QueueItemId`s, both orders, and the cursor — which is why persistence stores
+   * ids rather than rebuilding them. Every item is forced to `resolution: idle`
+   * regardless of what was handed in, so a restored session can never play from a
+   * stale bearer URL; the JIT scheduler re-resolves the current/next items fresh.
+   * Does not auto-play.
+   */
+  restoreQueue(queue: Queue): void {
+    const itemsById: Record<QueueItemId, QueueItem> = {};
+    for (const [id, item] of Object.entries(queue.itemsById)) {
+      itemsById[id] = { ...item, resolution: { status: "idle" } };
+    }
+    this.queue = { ...queue, itemsById };
+    this.epoch += 1;
+    this.scheduler.cancelAll();
+    this.loadTokens.clear();
+    this.resolutionOp.clear();
+    this.resetBreaker();
+    this.dispatch({ type: "RESET", epoch: this.epoch });
+    this.notify();
   }
 
   play(): void {

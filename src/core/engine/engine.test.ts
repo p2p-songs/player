@@ -250,3 +250,40 @@ describe("empty-queue append is playable (A-007)", () => {
     expect(playback(engine)).toMatchObject({ status: "buffering", itemId: "q1" });
   });
 });
+
+describe("Engine.getState — snapshot stability", () => {
+  it("returns the same reference until something actually changes", async () => {
+    const { engine, audio } = makeEngine(2);
+    const first = engine.getState();
+    expect(engine.getState()).toBe(first); // repeated reads are identical
+
+    engine.play();
+    await flush();
+    const afterPlay = engine.getState();
+    expect(afterPlay).not.toBe(first); // a real change produces a new snapshot
+    expect(engine.getState()).toBe(afterPlay); // …and then stabilizes again
+
+    audio.emitLoaded();
+    const afterLoaded = engine.getState();
+    expect(afterLoaded).not.toBe(afterPlay);
+    expect(engine.getState()).toBe(afterLoaded);
+  });
+
+  it("restoreQueue rebuilds identity and forces every item back to idle", async () => {
+    const { engine, audio } = makeEngine(2);
+    engine.play();
+    await flush();
+    audio.emitLoaded();
+
+    const saved = engine.getState().queue;
+    expect(saved.itemsById.q1!.resolution.status).toBe("resolved");
+
+    const restored = new Engine(new FakeResolver(), new FakeAudio(), { idGen: counterIdGen() });
+    restored.restoreQueue(saved);
+    const q = restored.getState().queue;
+    expect(Object.keys(q.itemsById)).toEqual(["q1", "q2"]); // stable ids preserved
+    expect(q.currentItemId).toBe(saved.currentItemId);
+    expect(q.itemsById.q1!.resolution).toEqual({ status: "idle" }); // never replays a stale URL
+    expect(q.itemsById.q2!.resolution).toEqual({ status: "idle" });
+  });
+});

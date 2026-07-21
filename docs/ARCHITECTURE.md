@@ -1022,6 +1022,24 @@ to the engine (debounced autosave + hydrate-on-boot) lands with the app shell in
 **P-5**, which is the first thing with a lifecycle to hang it on; playlist
 item-grain modelling is a P-7 sync refinement (§6b).
 
+**P-5 status — minimal e2e slice DONE (2026-07-21).** The app shell is built and
+verified by hand against live addons: install-by-URL addon manager, cross-addon
+search, album detail, player bar, queue drawer, home/library/settings. Three
+things worth recording because they are architecture, not UI detail:
+- **`Engine.getState()` is referentially stable.** It memoizes until `queue` or
+  `playback` actually changes. A fresh object per call made React's
+  `useSyncExternalStore` re-render forever; snapshot stability is an engine
+  contract every diffing subscriber needs, so the fix belongs here, not in a hook.
+- **`Engine.restoreQueue`** completes the §6 persistence story: a restored
+  session keeps its *stable `QueueItemId`s* (which is why persistence stores ids
+  at all) and forces every item to `resolution: idle`.
+- **The TanStack Query client lives in `src/app/providers.tsx`** — the metadata
+  plane's policy, deferred out of `src/core` in P-3, now has its home. `/stream`
+  still never passes through it (§5a).
+- *Not yet built, deliberately:* a router (nav is local state), and the theme
+  **contract/registry** — only the token layer exists. §7a says ship one theme
+  first; the swappable-surface seam isn't earned until a second theme is wanted.
+
 **A-009 (2026-07-21) reconciled** — 3 medium: the shared provider deadline is now
 a hard bound rather than a cooperative abort; read-modify-write atomicity moved
 into the store port; and play history, an explicit P-4 deliverable that had been

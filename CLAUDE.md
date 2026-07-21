@@ -186,7 +186,23 @@ The app is a React/Vite shell at `index.html` → `src/app/main.tsx`.
   implementations (`HtmlAudioBackend`, `DexieStore`, real `fetch`) so `src/core`
   stays platform-agnostic; `providers.tsx` holds the **TanStack Query client**,
   finally closing §5a's deferred metadata-plane policy (`/stream` still never
-  goes through it); `store.ts` is the tiny Zustand UI store.
+  goes through it); `store.ts` is the tiny Zustand UI store;
+  **`security/`** is the §6a browser threat model (below).
+- **`src/app/security/` — the §6a gate (landed 2026-07-21, before the first
+  credential-bearing addon, `bitbop`).** `csp.ts` builds the policy; a Vite
+  `transformIndexHtml` plugin injects it as `<meta http-equiv>` so it applies on
+  any static host. Prod is **`script-src 'self'`** (no inline, no eval) +
+  `object-src`/`base-uri`/`frame-ancestors`/`form-action` `'none'` +
+  `require-trusted-types-for 'script'`; dev relaxes script-src for HMR only.
+  Vite's **modulepreload polyfill is off** — it's an inline `<script>`, and the
+  build must emit none. **Verify against `dist/index.html`, not the source.**
+  `redact.ts` masks a configured URL's config segment inside *arbitrary text*;
+  `ErrorBoundary` logs only that, never the error object or React's `errorInfo`.
+  **Known-honest limits:** `connect-src`/`img-src`/`media-src` allow arbitrary
+  `https:` (addons are user-installed URLs on unknowable hosts), so CSP guards
+  against *injected* code, not a trusted addon's host; and the Trusted Types
+  `'default'` policy currently passes through with a redacted warning — a
+  monitored escape hatch, to be tightened to a throw after a real-browser pass.
 - **`src/ui/`** — `tokens.css` (the one reference theme, "Dark (Espresso)"),
   `viewmodels/` (headless hooks over the engine — components own no playback
   logic, §8a), `components/`, `screens/`.

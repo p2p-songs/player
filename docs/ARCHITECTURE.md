@@ -578,14 +578,38 @@ in that same origin — the v1 **browser threat model** is an explicit
 requirement, not a nicety:
 
 - **Strict CSP** with no `unsafe-inline` / `unsafe-eval`; **Trusted Types**
-  where supported.
+  where supported. *Implemented 2026-07-21*, as the gate before the first
+  credential-bearing addon (`bitbop`). `src/app/security/csp.ts` builds the
+  policy and a Vite `transformIndexHtml` plugin injects it as a `<meta
+  http-equiv>`, so it holds on any static host without server config.
+  Production is `script-src 'self'` plus `object-src`/`base-uri`/
+  `frame-ancestors`/`form-action` `'none'` and `require-trusted-types-for
+  'script'`; dev relaxes script-src for Vite HMR only. Vite's **modulepreload
+  polyfill is disabled** so the build emits *no inline script* for the policy to
+  accommodate. **Honest scope:** `connect-src`/`img-src`/`media-src` must allow
+  arbitrary `https:`, because addons are user-installed URLs on unknowable
+  hosts — so CSP is the boundary against **injected** code (the real threat
+  named above), not against a *trusted* addon's own host. Trusted Types
+  currently installs a `'default'` policy that passes through with a redacted
+  warning: a **monitored escape hatch**, not a bypass — the app has no DOM-XSS
+  sinks, so it should never fire, and it exists so an unexpected dependency sink
+  is loud rather than a white screen. It tightens to a hard throw after a
+  real-browser verification pass; the strong, tested guarantee is `script-src`.
 - **No remote theme or plugin code, ever.** Themes (§7a) are first-party,
   bundled, reviewed code — never fetched/eval'd from a URL at runtime. (This is
   now a hard invariant on the theming feature, §7a/§11.)
 - **Dependency + telemetry discipline:** minimize third-party runtime deps in
   the app origin; no analytics/telemetry that could capture URLs or state.
 - **Redacted error boundaries:** crash/error paths must not serialize
-  configured URLs into messages, stack frames, or reports.
+  configured URLs into messages, stack frames, or reports. *Implemented
+  2026-07-21:* `ui/components/ErrorBoundary.tsx` renders a generic fallback and
+  logs only `redactSecrets(message)` — never the error object (its `.stack`) and
+  never React's `errorInfo` component stack, either of which can embed a
+  configured URL. It deliberately offers **no** telemetry and no "copy error
+  details" button; each would be a channel a credential could leave through.
+  `app/security/redact.ts` masks the config segment of a configured manifest URL
+  found anywhere in **free text**, keeping the host so a redacted log still says
+  which addon.
 
 Handling rules (implementation requirements, auditable):
 
@@ -610,6 +634,11 @@ Handling rules (implementation requirements, auditable):
   *responses* it's allowed to cache (metadata/artwork) may be cached, never the
   request URL as a cache key in a way that persists the secret. **Tested:** an
   automated test asserts configured URLs never appear in any SW/HTTP cache.
+  *Status (2026-07-21):* the **HTTP-cache half is implemented and tested** —
+  `defaultHttpGet` passes `cache: "no-store"` on every addon request, pinned by
+  `core/addon/http-cache.test.ts`. The **service-worker half is not yet
+  applicable**: there is no service worker until P-6. It lands with the SW, and
+  is not a gap before then.
 - **Deletable / rotatable:** removing an addon purges its stored URL (locally
   and, if synced, from the backend); there's a path to re-paste an updated URL
   (rotated key).

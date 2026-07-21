@@ -486,10 +486,24 @@ than binding the engine to Dexie directly, durable state goes through a narrow
 `PlayerRepository` owns all the *rules* (below) and is tested headlessly against
 `MemoryStore`, while `DexieStore` is a thin IndexedDB adapter proven against
 `fake-indexeddb`. Swapping the storage engine is one file. The repository covers
-library, playlists, installed addons, settings, and the queue identity; every
-record carries `updatedAt` so the P-7 sync adapter (§6b) can do LWW without
-reshaping the store. **Wiring it to the engine** (debounced autosave +
+library, playlists, installed addons, settings, **play history**, and the queue
+identity; every record carries `updatedAt` so the P-7 sync adapter (§6b) can do
+LWW without reshaping the store. **Wiring it to the engine** (debounced autosave +
 hydrate-on-boot) lands with the app shell in **P-5**.
+
+**Mutation atomicity is a port-level primitive (audit A-009).** Any
+read-modify-write — appending to a playlist, preserving `savedAt`/`addedAt` on a
+re-save — goes through `PersistenceStore.update(collection, key, fn)`, which the
+adapter makes atomic (a Dexie `rw` transaction; a synchronous section in memory).
+Composing `get` then `put` in a caller is **not** equivalent: two overlapping
+edits each read the same prior value and the second write silently discards the
+first, which is how a user's playlist addition disappears with no error. Callers
+must never hand-roll the pair.
+
+**Play history** is an identity-only collection (`PlayEvent { id, track,
+playedAt }` — a `TrackRef`, never the resolved stream that played), capped by a
+retention limit so it can't grow unbounded. It is the durable source a
+recently-played view and §6b's listening-state sync build on.
 
 **Implemented (P-4): cross-addon catalog fan-out.** `AddonCollection.search`
 queries every installed addon advertising a searchable catalog for the content
@@ -989,7 +1003,9 @@ sibling of the stream fan-out. Each provider runs under a **bounded per-provider
 deadline** via the shared `askBounded` helper (`core/addon/fan-out.ts`), so one
 hung addon can neither stall search nor lose a healthy co-provider's results; a
 down/malformed provider is isolated and an aggregate error surfaces only when
-none was reachable. The resolver and `getMeta` were refactored onto that same
+none was reachable. That deadline is a **hard** bound (audit A-009): it races the
+task against a timer the helper controls, so a transport that ignores its abort
+signal still can't wedge a fan-out — an abort alone would only be cooperative. The resolver and `getMeta` were refactored onto that same
 helper — which also closed a latent hung-provider stall in `getMeta`'s sequential
 walk. *Persistence* (`src/core/persistence/`) is a **store port + adapters**
 (§9 decision 2): `PlayerRepository` owns the rules, `MemoryStore` is the headless
@@ -999,10 +1015,18 @@ rules are enforced and tested: **persist identity, not resolved media** (saving 
 queue strips every `resolution`; hydration rebuilds each item as `idle`, asserted
 down to "the bearer URL never reaches the store"), and **installed addons are
 secret-bearing** (own table, `configured` flag, `redactManifestUrl` for any
-display/log). *Deferred:* wiring the repository to the engine (debounced
-autosave + hydrate-on-boot) lands with the app shell in **P-5**, which is the
-first thing with a lifecycle to hang it on; playlist item-grain modelling is a
-P-7 sync refinement (§6b).
+display/log). Mutations that read-modify-write go through the port's atomic
+`update` so overlapping edits can't lose work, and **play history** is present as
+an identity-only, retention-capped collection. *Deferred:* wiring the repository
+to the engine (debounced autosave + hydrate-on-boot) lands with the app shell in
+**P-5**, which is the first thing with a lifecycle to hang it on; playlist
+item-grain modelling is a P-7 sync refinement (§6b).
+
+**A-009 (2026-07-21) reconciled** — 3 medium: the shared provider deadline is now
+a hard bound rather than a cooperative abort; read-modify-write atomicity moved
+into the store port; and play history, an explicit P-4 deliverable that had been
+shipped-around, is implemented (with a cumulative Dexie v1→v2 schema so existing
+databases upgrade).
 
 ---
 

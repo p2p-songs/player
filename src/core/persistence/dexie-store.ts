@@ -25,10 +25,13 @@ export class DexieStore implements PersistenceStore {
 
   constructor(name = "p2p-songs") {
     this.db = new Dexie(name);
-    // One table per collection, primary-keyed by the string `key`.
-    const schema: Record<string, string> = {};
-    for (const collection of Object.values(COLLECTIONS)) schema[collection] = "key";
-    this.db.version(1).stores(schema);
+    // One table per collection, primary-keyed by the string `key`. Versions are
+    // declared cumulatively so an existing database upgrades cleanly: v1 shipped
+    // five tables, v2 adds `history` (audit A-009).
+    const keyed = (collections: readonly string[]): Record<string, string> =>
+      Object.fromEntries(collections.map((c) => [c, "key"]));
+    this.db.version(1).stores(keyed(["library", "playlists", "addons", "settings", "queue"]));
+    this.db.version(2).stores(keyed(Object.values(COLLECTIONS)));
   }
 
   private table(collection: string): Table<Row, string> {
@@ -47,6 +50,16 @@ export class DexieStore implements PersistenceStore {
 
   async put<T>(collection: string, key: string, value: T): Promise<void> {
     await this.table(collection).put({ key, value });
+  }
+
+  /** Atomic read-modify-write inside a Dexie `rw` transaction (IndexedDB serializes it). */
+  async update<T>(collection: string, key: string, fn: (current: T | undefined) => T | undefined): Promise<void> {
+    const table = this.table(collection);
+    await this.db.transaction("rw", table, async () => {
+      const row = await table.get(key);
+      const next = fn(row ? (row.value as T) : undefined);
+      if (next !== undefined) await table.put({ key, value: next });
+    });
   }
 
   async delete(collection: string, key: string): Promise<void> {

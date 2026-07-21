@@ -146,14 +146,21 @@ dedicated `vitest.config.ts` (the harness `vite.config.ts` sets `root: harness`)
 The addon devDeps are wired as `node_modules/@p2p-songs/*` symlinks (like
 `protocol`).
 
-**P-4 persistence + catalog fan-out — DONE (2026-07-21).** **149 tests;
-typecheck + build green.**
+**P-4 persistence + catalog fan-out — DONE (2026-07-21); A-009 reconciled.**
+**166 tests; typecheck + build + built-output probes green.**
 - **`src/core/persistence/`** (§6) — a **store port + adapters**, not a direct
   Dexie binding (§9 decision 2): `PlayerRepository` owns the rules and is tested
   against `MemoryStore`; `DexieStore` is the thin IndexedDB adapter, proven with
-  `fake-indexeddb` (incl. surviving a fresh connection = reload). Covers library,
-  playlists, installed addons, settings, queue identity; every record has
-  `updatedAt` for the P-7 sync adapter.
+  `fake-indexeddb` (incl. surviving a fresh connection = reload, and a real
+  v1→v2 schema upgrade). Covers library, playlists, installed addons, settings,
+  **play history**, queue identity; every record has `updatedAt` for the P-7
+  sync adapter.
+- **Atomicity is a port primitive (A-009):** every read-modify-write goes through
+  `PersistenceStore.update` (Dexie `rw` transaction / synchronous memory
+  section). Never hand-roll `get`+`put` — two overlapping playlist edits would
+  silently discard one.
+- **Play history** — identity-only `PlayEvent { id, track, playedAt }` (a
+  `TrackRef`, never the resolved stream), retention-capped (`historyLimit`, 500).
 - **Two load-bearing rules, enforced + tested:** *persist identity, not resolved
   media* — `saveQueue` strips every `resolution`, `loadQueue` rebuilds each item
   `idle`, asserted down to "the bearer URL never reaches the store"; and
@@ -162,10 +169,12 @@ typecheck + build green.**
 - **`AddonCollection.search`** (§6) — cross-addon catalog fan-out: parallel over
   every addon advertising a searchable catalog for the type, **merged + deduped
   by content id** (install-order priority).
-- **`core/addon/fan-out.ts` — one bounded-fan-out helper.** `askBounded` (child
-  signal + per-provider deadline, never rejects) now backs the stream resolver,
-  `getMeta`, and `search`. Folding `getMeta` onto it also closed a latent
-  hung-provider stall in its sequential walk.
+- **`core/addon/fan-out.ts` — one bounded-fan-out helper.** `askBounded` backs the
+  stream resolver, `getMeta`, and `search`. Folding `getMeta` onto it also closed
+  a latent hung-provider stall in its sequential walk. Its deadline is a **hard**
+  bound (A-009): it races the task against a timer it owns, so a transport that
+  ignores its abort signal can't wedge a fan-out — aborting alone is only
+  cooperative. Abandoned tasks are rejection-safe (no unhandled rejections).
 - **Deferred:** wiring the repository to the engine (debounced autosave +
   hydrate-on-boot) belongs with the app shell in **P-5**; playlist item-grain
   modelling is a P-7 sync refinement (§6b).

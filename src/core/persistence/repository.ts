@@ -21,6 +21,7 @@ import {
   type InstalledAddonRecord,
   type LibraryEntry,
   type PersistedQueue,
+  type PlayEvent,
   type Playlist,
   type SettingEntry,
 } from "./schema.js";
@@ -29,6 +30,8 @@ import type { TrackRef } from "../queue/types.js";
 export interface PlayerRepositoryOptions {
   now?: () => number;
   newId?: () => string;
+  /** Max play-history entries to retain; oldest are pruned past this (default 500). */
+  historyLimit?: number;
 }
 
 const QUEUE_KEY = "current";
@@ -36,22 +39,25 @@ const QUEUE_KEY = "current";
 export class PlayerRepository {
   private readonly now: () => number;
   private readonly newId: () => string;
+  private readonly historyLimit: number;
 
   constructor(private readonly store: PersistenceStore, options: PlayerRepositoryOptions = {}) {
     this.now = options.now ?? Date.now;
     this.newId = options.newId ?? (() => crypto.randomUUID());
+    this.historyLimit = options.historyLimit ?? 500;
   }
 
   // --- library ---
 
   async saveToLibrary(entry: Omit<LibraryEntry, "savedAt" | "updatedAt">): Promise<void> {
     const now = this.now();
-    const existing = await this.store.get<LibraryEntry>(COLLECTIONS.library, entry.id);
-    await this.store.put<LibraryEntry>(COLLECTIONS.library, entry.id, {
+    // Atomic: preserving `savedAt` is a read-modify-write, so it must not race
+    // another save of the same entry (audit A-009).
+    await this.store.update<LibraryEntry>(COLLECTIONS.library, entry.id, (existing) => ({
       ...entry,
       savedAt: existing?.savedAt ?? now,
       updatedAt: now,
-    });
+    }));
   }
 
   removeFromLibrary(id: string): Promise<void> {
@@ -107,25 +113,30 @@ export class PlayerRepository {
     await this.mutatePlaylist(id, (pl) => ({ ...pl, tracks }));
   }
 
+  /**
+   * All playlist edits funnel through one **atomic** read-modify-write. Composing
+   * `get` + `put` here would let two overlapping edits each read the same prior
+   * list and the second write silently discard the first — a user's addition
+   * vanishing with no error (audit A-009).
+   */
   private async mutatePlaylist(id: string, fn: (pl: Playlist) => Playlist): Promise<void> {
-    const pl = await this.store.get<Playlist>(COLLECTIONS.playlists, id);
-    if (!pl) return;
-    await this.store.put(COLLECTIONS.playlists, id, { ...fn(pl), updatedAt: this.now() });
+    await this.store.update<Playlist>(COLLECTIONS.playlists, id, (pl) =>
+      pl === undefined ? undefined : { ...fn(pl), updatedAt: this.now() },
+    );
   }
 
   // --- installed addons (secret-bearing, §6a) ---
 
   async saveAddon(addon: { id: string; manifestUrl: string; name: string }): Promise<void> {
     const now = this.now();
-    const existing = await this.store.get<InstalledAddonRecord>(COLLECTIONS.addons, addon.id);
-    await this.store.put<InstalledAddonRecord>(COLLECTIONS.addons, addon.id, {
+    await this.store.update<InstalledAddonRecord>(COLLECTIONS.addons, addon.id, (existing) => ({
       id: addon.id,
       manifestUrl: addon.manifestUrl,
       name: addon.name,
       configured: isConfiguredUrl(addon.manifestUrl),
       addedAt: existing?.addedAt ?? now,
       updatedAt: now,
-    });
+    }));
   }
 
   removeAddon(id: string): Promise<void> {
@@ -150,6 +161,37 @@ export class PlayerRepository {
 
   setSetting(key: string, value: unknown): Promise<void> {
     return this.store.put<SettingEntry>(COLLECTIONS.settings, key, { key, value, updatedAt: this.now() });
+  }
+
+  // --- play history (§6) ---
+
+  /**
+   * Record that `track` was played. Stores **identity only** — never the
+   * resolved stream it played from — and prunes past the retention limit so the
+   * history can't grow unbounded.
+   */
+  async recordPlay(track: TrackRef): Promise<void> {
+    const event: PlayEvent = { id: this.newId(), track, playedAt: this.now() };
+    await this.store.put(COLLECTIONS.history, event.id, event);
+    await this.pruneHistory();
+  }
+
+  /** Most-recently-played first. */
+  async listRecentPlays(limit = 50): Promise<PlayEvent[]> {
+    const all = await this.store.getAll<PlayEvent>(COLLECTIONS.history);
+    return all.sort((a, b) => b.playedAt - a.playedAt).slice(0, limit);
+  }
+
+  clearHistory(): Promise<void> {
+    return this.store.clear(COLLECTIONS.history);
+  }
+
+  /** Drop the oldest entries beyond `historyLimit`. */
+  private async pruneHistory(): Promise<void> {
+    const all = await this.store.getAll<PlayEvent>(COLLECTIONS.history);
+    if (all.length <= this.historyLimit) return;
+    const excess = all.sort((a, b) => b.playedAt - a.playedAt).slice(this.historyLimit);
+    for (const e of excess) await this.store.delete(COLLECTIONS.history, e.id);
   }
 
   // --- queue identity (§4a/§6): persist identity, never resolution ---

@@ -61,6 +61,58 @@ describe("DexieStore (IndexedDB)", () => {
     reopened.close();
   });
 
+  it("update() is atomic across concurrent callers (A-009)", async () => {
+    const { store } = freshStore();
+    await store.put("library", "counter", { n: 0 });
+    // Ten overlapping increments; a get-then-put would lose most of them.
+    await Promise.all(
+      Array.from({ length: 10 }, () =>
+        store.update<{ n: number }>("library", "counter", (cur) => ({ n: (cur?.n ?? 0) + 1 })),
+      ),
+    );
+    expect(await store.get("library", "counter")).toEqual({ n: 10 });
+    store.close();
+  });
+
+  it("does not lose either edit when two playlist adds overlap", async () => {
+    const { store } = freshStore();
+    const repo = new PlayerRepository(store, { now: () => 1, newId: () => "pl1" });
+    const pl = await repo.createPlaylist("Favs");
+    await Promise.all([repo.addToPlaylist(pl.id, track("A")), repo.addToPlaylist(pl.id, track("B"))]);
+    const titles = (await repo.getPlaylist(pl.id))!.tracks.map((t) => t.title).sort();
+    expect(titles).toEqual(["A", "B"]);
+    store.close();
+  });
+
+  it("persists play history (the v2 table)", async () => {
+    const { store } = freshStore();
+    let t = 0;
+    const repo = new PlayerRepository(store, { now: () => ++t, newId: (() => { let n = 0; return () => `h${++n}`; })() });
+    await repo.recordPlay(track("First"));
+    await repo.recordPlay(track("Second"));
+    expect((await repo.listRecentPlays()).map((e) => e.track.title)).toEqual(["Second", "First"]);
+    store.close();
+  });
+
+  it("upgrades a v1 database to v2 without losing data", async () => {
+    const name = `upgrade-${Math.random().toString(36).slice(2)}`;
+    dbNames.push(name);
+    // A database as v1 shipped it: five tables, no `history`.
+    const v1 = new Dexie(name);
+    v1.version(1).stores({ library: "key", playlists: "key", addons: "key", settings: "key", queue: "key" });
+    await v1.open();
+    await v1.table("library").put({ key: "alb", value: { id: "alb", kind: "album", name: "Kept", savedAt: 1, updatedAt: 1 } });
+    v1.close();
+
+    // Re-opening through the current adapter must migrate, not wipe.
+    const store = new DexieStore(name);
+    const repo = new PlayerRepository(store);
+    expect((await repo.listLibrary()).map((e) => e.id)).toEqual(["alb"]);
+    await repo.recordPlay(track("Post-upgrade")); // the new table is usable
+    expect(await repo.listRecentPlays()).toHaveLength(1);
+    store.close();
+  });
+
   it("keeps the queue-identity rule through IndexedDB: no resolution, hydrates to idle", async () => {
     const { store, name } = freshStore();
     const repo = new PlayerRepository(store, { now: () => 1, newId: () => "x" });

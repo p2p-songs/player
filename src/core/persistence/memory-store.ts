@@ -28,6 +28,17 @@ export class MemoryStore implements PersistenceStore {
     this.table(collection).set(key, clone(value));
   }
 
+  /**
+   * Atomic by construction: the read and the write happen in one synchronous
+   * section, so no other `await`ing caller can interleave between them.
+   */
+  async update<T>(collection: string, key: string, fn: (current: T | undefined) => T | undefined): Promise<void> {
+    const table = this.table(collection);
+    const raw = table.get(key);
+    const next = fn(raw === undefined ? undefined : (clone(raw) as T));
+    if (next !== undefined) table.set(key, clone(next));
+  }
+
   async delete(collection: string, key: string): Promise<void> {
     this.table(collection).delete(key);
   }

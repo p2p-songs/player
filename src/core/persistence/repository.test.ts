@@ -66,6 +66,87 @@ describe("PlayerRepository — playlists", () => {
   });
 });
 
+describe("PlayerRepository — concurrent mutations (A-009)", () => {
+  it("does not lose either edit when two playlist adds overlap", async () => {
+    const r = repo();
+    const pl = await r.createPlaylist("Favs");
+    // Fired together: the old get-then-put would let the second write clobber
+    // the first, silently dropping a track the user added.
+    await Promise.all([
+      r.addToPlaylist(pl.id, track({ title: "A" })),
+      r.addToPlaylist(pl.id, track({ title: "B" })),
+    ]);
+    const titles = (await r.getPlaylist(pl.id))!.tracks.map((t) => t.title).sort();
+    expect(titles).toEqual(["A", "B"]);
+  });
+
+  it("does not lose an add that overlaps a rename", async () => {
+    const r = repo();
+    const pl = await r.createPlaylist("Favs");
+    await Promise.all([r.addToPlaylist(pl.id, track({ title: "A" })), r.renamePlaylist(pl.id, "Bangers")]);
+    const saved = (await r.getPlaylist(pl.id))!;
+    expect(saved.name).toBe("Bangers");
+    expect(saved.tracks.map((t) => t.title)).toEqual(["A"]);
+  });
+
+  it("keeps concurrent adds of different tracks to the same playlist", async () => {
+    const r = repo();
+    const pl = await r.createPlaylist("Big");
+    await Promise.all(
+      ["1", "2", "3", "4", "5"].map((n) => r.addToPlaylist(pl.id, track({ title: n }))),
+    );
+    expect((await r.getPlaylist(pl.id))!.tracks).toHaveLength(5);
+  });
+
+  it("mutating a missing playlist is a no-op, not a resurrection", async () => {
+    const r = repo();
+    await r.addToPlaylist("nope", track());
+    expect(await r.getPlaylist("nope")).toBeUndefined();
+  });
+});
+
+describe("PlayerRepository — play history", () => {
+  it("records plays newest-first and stores identity only (no resolved media)", async () => {
+    const store = new MemoryStore();
+    const r = new PlayerRepository(store, { now: (() => { let t = 0; return () => ++t; })(), newId: (() => { let n = 0; return () => `h${++n}`; })() });
+    await r.recordPlay(track({ title: "First" }));
+    await r.recordPlay(track({ title: "Second" }));
+
+    const recent = await r.listRecentPlays();
+    expect(recent.map((e) => e.track.title)).toEqual(["Second", "First"]);
+    // Identity only: a play event carries a TrackRef, never a resolution/url.
+    const raw = JSON.stringify(await store.getAll("history"));
+    expect(raw).not.toContain("resolution");
+    expect(raw).not.toContain("http");
+  });
+
+  it("honors the limit argument", async () => {
+    const r = repo();
+    for (const t of ["a", "b", "c"]) await r.recordPlay(track({ title: t }));
+    expect(await r.listRecentPlays(2)).toHaveLength(2);
+  });
+
+  it("prunes past the retention limit, keeping the most recent", async () => {
+    let t = 0;
+    let n = 0;
+    const r = new PlayerRepository(new MemoryStore(), {
+      now: () => ++t,
+      newId: () => `h${++n}`,
+      historyLimit: 3,
+    });
+    for (const title of ["1", "2", "3", "4", "5"]) await r.recordPlay(track({ title }));
+    const kept = await r.listRecentPlays(100);
+    expect(kept.map((e) => e.track.title)).toEqual(["5", "4", "3"]);
+  });
+
+  it("clears history", async () => {
+    const r = repo();
+    await r.recordPlay(track());
+    await r.clearHistory();
+    expect(await r.listRecentPlays()).toEqual([]);
+  });
+});
+
 describe("PlayerRepository — installed addons (secret-bearing)", () => {
   it("marks configured URLs, preserves addedAt on update, lists in install order", async () => {
     const r = repo();

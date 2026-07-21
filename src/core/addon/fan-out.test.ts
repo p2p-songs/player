@@ -42,6 +42,62 @@ describe("askBounded", () => {
     expect(r).toEqual({ kind: "aborted" });
   });
 
+  it("times out against a task that IGNORES its abort signal (hard deadline, A-009)", async () => {
+    // The failure A-009 found: a transport that never observes its signal must
+    // not be able to wedge the helper past its deadline.
+    const stubborn = () => new Promise<never>(() => {}); // never settles, ignores abort
+    const started = Date.now();
+    const r = await askBounded(stubborn, neverAbort(), 15);
+    expect(r).toEqual({ kind: "timeout" });
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
+  it("aborts on the outer signal even if the task ignores it", async () => {
+    const stubborn = () => new Promise<never>(() => {});
+    const outer = new AbortController();
+    setTimeout(() => outer.abort(), 5);
+    const r = await askBounded(stubborn, outer.signal, 5000);
+    expect(r).toEqual({ kind: "aborted" });
+  });
+
+  it("swallows a late rejection from an abandoned task (no unhandled rejection)", async () => {
+    // Reached via globalThis: the player has no @types/node (it's a browser app).
+    const proc = (globalThis as unknown as {
+      process?: { on(e: string, l: (r: unknown) => void): void; off(e: string, l: (r: unknown) => void): void };
+    }).process;
+    const unhandled: unknown[] = [];
+    const onUnhandled = (r: unknown) => unhandled.push(r);
+    proc?.on("unhandledRejection", onUnhandled);
+    try {
+      // Rejects well after the deadline has already produced `timeout`.
+      const lateReject = (signal: AbortSignal) =>
+        new Promise<never>((_res, reject) => {
+          void signal;
+          setTimeout(() => reject(new Error("too late")), 40);
+        });
+      const r = await askBounded(lateReject, neverAbort(), 10);
+      expect(r).toEqual({ kind: "timeout" });
+      await new Promise((res) => setTimeout(res, 60)); // let the late rejection land
+      expect(unhandled).toEqual([]);
+    } finally {
+      proc?.off("unhandledRejection", onUnhandled);
+    }
+  });
+
+  it("ignores a late resolution from an abandoned task", async () => {
+    const lateResolve = () => new Promise<string>((res) => setTimeout(() => res("late"), 40));
+    const r = await askBounded(lateResolve, neverAbort(), 10);
+    expect(r).toEqual({ kind: "timeout" }); // the late value never overwrites the outcome
+  });
+
+  it("surfaces a synchronous throw from the task as an error", async () => {
+    const boom = new Error("sync boom");
+    const r = await askBounded(() => {
+      throw boom;
+    }, neverAbort(), 1000);
+    expect(r).toEqual({ kind: "error", error: boom });
+  });
+
   it("passes a child signal that aborts on timeout so the task can clean up", async () => {
     let sawAbort = false;
     await askBounded(

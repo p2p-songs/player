@@ -15,6 +15,7 @@ export const COLLECTIONS = {
   addons: "addons",
   settings: "settings",
   queue: "queue",
+  history: "history",
 } as const;
 
 /** A saved library reference — a track/album/artist/playlist the user starred. */
@@ -60,6 +61,19 @@ export interface SettingEntry {
   key: string;
   value: unknown;
   updatedAt: number;
+}
+
+/**
+ * One play in the listening history (§6 "play history"; the durable source a
+ * recently-played view and the §6b listening-state sync build on). Like every
+ * other record it stores **identity only** — a `TrackRef`, never the resolved
+ * stream that was actually played. History is capped by a retention limit so it
+ * cannot grow without bound.
+ */
+export interface PlayEvent {
+  id: string;
+  track: TrackRef;
+  playedAt: number;
 }
 
 /**

@@ -17,4 +17,5 @@ export {
   type InstalledAddonRecord,
   type SettingEntry,
   type PersistedQueue,
+  type PlayEvent,
 } from "./schema.js";

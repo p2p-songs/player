@@ -119,7 +119,8 @@ typecheck + build + live-HTTP e2e green.**
 typecheck + `vite build` green.**
 - **`html-audio.ts`** — `HtmlAudioBackend` over **two ping-ponged media elements**:
   `preload` buffers the next URL on the idle element; `load` of a preloaded URL
-  **swaps** to it (gapless) instead of reloading. Tokened events (`loaded`/`ended`/
+  **swaps** to it (gapless) instead of reloading — **pausing the outgoing element**
+  so both tracks never play at once (found via the harness smoke). Tokened events (`loaded`/`ended`/
   `error`/`position`) echo each element's token so late completions drop by
   identity (§4b); `ended`/`position` only from the active element; a rejected
   `play()` (autoplay policy) is swallowed. **`crossfadeTo`** ramps `element.volume`

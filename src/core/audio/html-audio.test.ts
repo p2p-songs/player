@@ -134,6 +134,20 @@ describe("HtmlAudioBackend — dual-element preload & swap (gapless core)", () =
     expect(b.volume).toBe(1); // brought up to full on becoming active
   });
 
+  it("pauses the outgoing element on swap — no simultaneous playback", () => {
+    const { a, b, backend } = setup();
+    backend.load("https://cdn/cur.flac", "cur");
+    backend.play();
+    expect(a.paused).toBe(false); // Track 1 playing on element A
+
+    backend.preload("https://cdn/next.flac", "next");
+    backend.load("https://cdn/next.flac", "attempt2"); // swap to B (the Next press)
+    expect(a.paused).toBe(true); // Track 1 must stop immediately on swap
+    backend.play();
+    expect(b.paused).toBe(false); // Track 2 now plays…
+    expect(a.paused).toBe(true); // …and Track 1 is NOT still playing
+  });
+
   it("after a swap, ended/position come from the newly-active element only", () => {
     const { a, b, backend, events } = setup();
     backend.load("https://cdn/cur.flac", "cur");

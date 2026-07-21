@@ -36,6 +36,7 @@ export class FakeMediaElement implements MediaElementLike {
     this.currentTime = 0;
     this.readyState = 0;
     this.error = null;
+    this.paused = true; // (re)loading a source stops any current playback
   }
   addEventListener(type: string, listener: () => void): void {
     let set = this.listeners.get(type);

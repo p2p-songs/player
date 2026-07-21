@@ -64,10 +64,15 @@ export class HtmlAudioBackend implements AudioBackend {
 
   load(url: string, token: string): void {
     this.endFade(); // a hard load supersedes any in-flight crossfade
+    const outgoing = this.active;
     if (this.idle.url === url && this.idle.el.src) {
       // The next track was preloaded on the idle element — swap to it instead of
-      // reloading, so its already-buffered audio starts gaplessly.
+      // reloading, so its already-buffered audio starts gaplessly. The outgoing
+      // element must be paused: unlike the reload branch (where setting `.src`
+      // stops the old media), a swap leaves the old element running, which would
+      // play both tracks at once.
       [this.active, this.idle] = [this.idle, this.active];
+      outgoing.el.pause();
     } else {
       this.active.el.src = url;
       this.active.url = url;

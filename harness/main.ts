@@ -81,7 +81,14 @@ $("crossfade").onclick = () => {
   const curId = s.queue.currentItemId;
   const idx = curId ? order.indexOf(curId) : -1;
   const nextUrl = urls[idx + 1];
-  if (nextUrl) backend.crossfadeTo(nextUrl, `harness-crossfade-${idx + 1}`, 3000);
+  if (nextUrl) {
+    backend.crossfadeTo(nextUrl, `harness-crossfade-${idx + 1}`, 3000);
+    // This button drives the backend directly, bypassing the engine, so the
+    // status readout above (which reflects engine state) intentionally does NOT
+    // move during the ramp. The engine-synced crossfade is the deferred
+    // anticipatory trigger (ARCHITECTURE §4c).
+    statusBox.textContent += "\n\n⤫ crossfade demo: backend-only ramp — engine cursor/position above stays put by design (engine-synced crossfade is deferred, §4c).";
+  }
 };
 
 buildQueue();

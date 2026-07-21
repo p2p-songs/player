@@ -14,15 +14,27 @@
  *   layer (P-5) — keeping `src/core` headless and dependency-light. Only the
  *   command plane needs to live in the engine, because it is scheduler-owned.
  */
-import type { ContentType, MetaDetail } from "@p2p-songs/protocol";
+import type { ContentType, MetaDetail, MetaPreview } from "@p2p-songs/protocol";
 import { AddonClient, type AddonClientOptions } from "./client.js";
-import { AddonUnreachableError, isAbortError, isProviderDown } from "./http.js";
+import { AddonUnreachableError, isProviderDown } from "./http.js";
+import { askBounded, neverAbort, DEFAULT_PROVIDER_TIMEOUT_MS } from "./fan-out.js";
+
+export interface AddonCollectionOptions {
+  /** Per-provider deadline for metadata reads (default 15s) — one hung addon can't stall a fan-out (A-008). */
+  providerTimeoutMs?: number;
+}
 
 export class AddonCollection {
   /** Installed clients in installation order (which defines fan-out / rank order). */
   private readonly clients: AddonClient[] = [];
+  private readonly providerTimeoutMs: number;
 
-  constructor(private readonly clientOptions: AddonClientOptions = {}) {}
+  constructor(
+    private readonly clientOptions: AddonClientOptions = {},
+    options: AddonCollectionOptions = {},
+  ) {
+    this.providerTimeoutMs = options.providerTimeoutMs ?? DEFAULT_PROVIDER_TIMEOUT_MS;
+  }
 
   /**
    * Install (or update) an addon from its manifest URL. Re-installing an addon
@@ -69,23 +81,101 @@ export class AddonCollection {
    */
   async getMeta(type: ContentType, id: string, signal?: AbortSignal): Promise<MetaDetail | undefined> {
     const providers = this.clients.filter((c) => c.supports("meta") && c.handlesType(type) && c.handlesId(id));
+    const outer = signal ?? neverAbort();
     let anyReachable = false;
     let anyDown = false;
     for (const addon of providers) {
-      try {
-        const meta = await addon.getMeta(type, id, signal);
+      // Bound each provider: a hung addon must not stall the sequential walk (A-008).
+      const r = await askBounded((sig) => addon.getMeta(type, id, sig), outer, this.providerTimeoutMs);
+      if (r.kind === "ok") {
         anyReachable = true; // reached the addon, even if it had no meta
-        if (meta) return meta;
-      } catch (err) {
-        if (isAbortError(err)) throw err; // a skip/supersede — don't mask it
-        if (isProviderDown(err)) {
-          anyDown = true; // isolate this addon-wide fault, try the next provider
-          continue;
-        }
-        throw err; // an unexpected (non-addon) error is a real bug — surface it
+        if (r.value) return r.value;
+      } else if (r.kind === "timeout") {
+        anyDown = true; // isolate this addon-wide fault, try the next provider
+      } else if (r.kind === "aborted") {
+        throw abortError(); // a skip/supersede — propagate, don't mask
+      } else if (isProviderDown(r.error)) {
+        anyDown = true;
+      } else {
+        throw r.error; // an unexpected (non-addon) error is a real bug — surface it
       }
     }
     if (!anyReachable && anyDown) throw new AddonUnreachableError("all meta providers unreachable");
     return undefined;
   }
+
+  /**
+   * Search every installed catalog addon of `type` in parallel and merge the
+   * results, deduped by content id (first addon in install order wins). This is
+   * the metadata-plane sibling of the stream resolver's fan-out (§6 "parallel
+   * fan-out across installed addons; merge/dedup by MBID"): each provider runs
+   * under its own bounded deadline and a down/malformed/timed-out one is isolated
+   * — a healthy addon's results are never lost to a flaky co-provider. An
+   * aggregate `AddonUnreachableError` surfaces only when no provider was reachable
+   * (so the caller retries rather than showing an empty search as authoritative).
+   */
+  async search(type: ContentType, query: string, signal?: AbortSignal): Promise<MetaPreview[]> {
+    const providers = this.clients.filter((c) => this.searchCatalogsFor(c, type).length > 0);
+    if (providers.length === 0) return [];
+    const outer = signal ?? neverAbort();
+
+    const results = await Promise.all(
+      providers.map((addon) =>
+        askBounded(async (sig) => {
+          const metas: MetaPreview[] = [];
+          for (const cat of this.searchCatalogsFor(addon, type)) {
+            metas.push(...(await addon.getCatalog(type, cat.id, { search: query }, sig)));
+          }
+          return metas;
+        }, outer, this.providerTimeoutMs),
+      ),
+    );
+    if (outer.aborted) throw abortError();
+
+    const merged: MetaPreview[] = [];
+    let anyReachable = false;
+    let anyDown = false;
+    for (const r of results) {
+      if (r.kind === "ok") {
+        anyReachable = true;
+        merged.push(...r.value);
+      } else if (r.kind === "timeout") {
+        anyDown = true;
+      } else if (r.kind === "error") {
+        if (isProviderDown(r.error)) anyDown = true;
+        else throw r.error;
+      }
+      // "aborted" handled by the outer.aborted check above
+    }
+    const deduped = dedupById(merged);
+    if (deduped.length === 0 && !anyReachable && anyDown) {
+      throw new AddonUnreachableError("all catalog providers unreachable");
+    }
+    return deduped;
+  }
+
+  /** The searchable catalogs an addon advertises for `type` (a catalog with a `search` extra). */
+  private searchCatalogsFor(client: AddonClient, type: ContentType) {
+    if (!client.supports("catalog")) return [];
+    return client.manifest.catalogs.filter(
+      (cat) => cat.type === type && (cat.extra ?? []).some((e) => e.name === "search"),
+    );
+  }
+}
+
+/** A fresh AbortError, for propagating a cancellation the bounded helper swallowed. */
+function abortError(): DOMException {
+  return new DOMException("aborted", "AbortError");
+}
+
+/** Merge preview lists, keeping the first occurrence of each content id (install-order priority). */
+function dedupById(metas: MetaPreview[]): MetaPreview[] {
+  const seen = new Set<string>();
+  const out: MetaPreview[] = [];
+  for (const m of metas) {
+    if (seen.has(m.id)) continue;
+    seen.add(m.id);
+    out.push(m);
+  }
+  return out;
 }

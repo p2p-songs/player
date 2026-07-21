@@ -480,6 +480,24 @@ wrap, whereas `/stream` can never inherit those defaults (§5a).
 | Installed addon URLs + cached manifests | **Dexie**, in a dedicated **secret-bearing store** (§6a) | A *configured* addon URL contains the addon's config, which for `stream-debrid` includes a debrid API key — so this store holds credential material and is handled accordingly (§6a). |
 | Session / UI state (current view, queue snapshot, volume, mini-player) | **Zustand** | Tiny, framework-light, subscribe from React or from the engine. Queue + playback *snapshots* are mirrored here for the UI to render; the engine remains the source of truth. |
 
+**Implemented (P-4): `src/core/persistence/` — a store port + adapters.** Rather
+than binding the engine to Dexie directly, durable state goes through a narrow
+`PersistenceStore` port (§9 decision 2's "swappable behind `core/persistence`"):
+`PlayerRepository` owns all the *rules* (below) and is tested headlessly against
+`MemoryStore`, while `DexieStore` is a thin IndexedDB adapter proven against
+`fake-indexeddb`. Swapping the storage engine is one file. The repository covers
+library, playlists, installed addons, settings, and the queue identity; every
+record carries `updatedAt` so the P-7 sync adapter (§6b) can do LWW without
+reshaping the store. **Wiring it to the engine** (debounced autosave +
+hydrate-on-boot) lands with the app shell in **P-5**.
+
+**Implemented (P-4): cross-addon catalog fan-out.** `AddonCollection.search`
+queries every installed addon advertising a searchable catalog for the content
+type, in parallel under per-provider deadlines, and merges results **deduped by
+content id** (install-order priority) — the "parallel fan-out across installed
+addons; merge/dedup by MBID" this table calls for, at the transport layer. The
+TanStack Query policy that wraps it stays at the app layer (§5a).
+
 Persistence policy — **persist identity, not resolved media.** A thin adapter
 debounces durable state into Dexie so a reload restores your session, but it
 persists **only**: library, playlists, installed addon URLs, settings, and the
@@ -552,7 +570,10 @@ Handling rules (implementation requirements, auditable):
   dev and driven by the e2e test (§10). Enforced in `core/addon/endpoints.ts`.
 - **Stored as credential material** in the dedicated secret-bearing store,
   separate from non-sensitive state (organization, on top of — not instead of —
-  the threat model above).
+  the threat model above). *Implemented (P-4):* installed addons live in their own
+  `addons` table, each record flagged `configured` when its URL carries a config
+  segment, and `redactManifestUrl()` is the only sanctioned way to render one
+  (`https://host/…/manifest.json`) — never the raw URL, in UI, logs, or exports.
 - **Never logged or exported in the clear:** never written to `console`, error
   telemetry, diagnostics, analytics, or any bug-report/export blob. Anywhere a
   URL is shown or copyable in the UI, the config segment is **redacted** (show
@@ -959,6 +980,29 @@ stream *ranking* (currently stable per-provider concat) and catalog fan-out/merg
 are P-4; the "~30 s remaining" re-prefetch net needs the real `<audio>` timing
 (P-2). The addon packages are **test-only** devDeps — the player depends on no
 addon at runtime (neutrality, §11).
+
+**P-4 status — DONE (2026-07-21).** Both halves are built and headless-tested.
+*Catalog fan-out/merge* (`AddonCollection.search`) queries every installed addon
+that advertises a searchable catalog for the type, in parallel, and merges the
+results **deduped by content id** with install-order priority — the query-plane
+sibling of the stream fan-out. Each provider runs under a **bounded per-provider
+deadline** via the shared `askBounded` helper (`core/addon/fan-out.ts`), so one
+hung addon can neither stall search nor lose a healthy co-provider's results; a
+down/malformed provider is isolated and an aggregate error surfaces only when
+none was reachable. The resolver and `getMeta` were refactored onto that same
+helper — which also closed a latent hung-provider stall in `getMeta`'s sequential
+walk. *Persistence* (`src/core/persistence/`) is a **store port + adapters**
+(§9 decision 2): `PlayerRepository` owns the rules, `MemoryStore` is the headless
+fake, and `DexieStore` is the IndexedDB adapter (proven against `fake-indexeddb`,
+including surviving a fresh connection). The two architecturally load-bearing
+rules are enforced and tested: **persist identity, not resolved media** (saving a
+queue strips every `resolution`; hydration rebuilds each item as `idle`, asserted
+down to "the bearer URL never reaches the store"), and **installed addons are
+secret-bearing** (own table, `configured` flag, `redactManifestUrl` for any
+display/log). *Deferred:* wiring the repository to the engine (debounced
+autosave + hydrate-on-boot) lands with the app shell in **P-5**, which is the
+first thing with a lifecycle to hang it on; playlist item-grain modelling is a
+P-7 sync refinement (§6b).
 
 ---
 

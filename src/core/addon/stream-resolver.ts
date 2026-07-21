@@ -20,10 +20,8 @@ import type { TrackRef } from "../queue/types.js";
 import type { Resolver, ResolveOutcome } from "../scheduler/resolver.js";
 import type { AddonClient } from "./client.js";
 import { isAbortError, isProviderDown } from "./http.js";
+import { askBounded, DEFAULT_PROVIDER_TIMEOUT_MS } from "./fan-out.js";
 import { ProviderHealth, type ProviderHealthOptions } from "./provider-health.js";
-
-/** How long to wait for a single provider before treating it as unreachable. */
-const DEFAULT_PROVIDER_TIMEOUT_MS = 15000;
 
 export interface AddonStreamResolverOptions extends ProviderHealthOptions {
   /**
@@ -120,27 +118,18 @@ export class AddonStreamResolver implements Resolver {
    * which must not accrue backoff — the user skipped, the addon didn't fail).
    */
   private async askProvider(addon: AddonClient, req: StreamRequest, outerSignal: AbortSignal): Promise<ProviderResult> {
-    const child = new AbortController();
-    const onOuterAbort = () => child.abort();
-    if (outerSignal.aborted) child.abort();
-    else outerSignal.addEventListener("abort", onOuterAbort, { once: true });
-    let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      child.abort();
-    }, this.providerTimeoutMs);
-    try {
-      const streams = await addon.getStreams(req, child.signal);
-      return { kind: "ok", streams };
-    } catch (err) {
-      if (outerSignal.aborted) return { kind: "aborted" }; // outer cancel wins over our timeout
-      if (timedOut) return { kind: "down" }; // hung past its deadline → treat as unreachable
-      if (isProviderDown(err)) return { kind: "down" };
-      if (isAbortError(err)) return { kind: "aborted" }; // defensive: some other abort
-      return { kind: "fatal", error: err };
-    } finally {
-      clearTimeout(timer);
-      outerSignal.removeEventListener("abort", onOuterAbort);
+    const r = await askBounded((signal) => addon.getStreams(req, signal), outerSignal, this.providerTimeoutMs);
+    switch (r.kind) {
+      case "ok":
+        return { kind: "ok", streams: r.value };
+      case "timeout": // hung past its deadline → treat as unreachable
+        return { kind: "down" };
+      case "aborted":
+        return { kind: "aborted" };
+      case "error":
+        if (isProviderDown(r.error)) return { kind: "down" };
+        if (isAbortError(r.error)) return { kind: "aborted" }; // defensive: some other abort
+        return { kind: "fatal", error: r.error };
     }
   }
 

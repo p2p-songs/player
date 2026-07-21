@@ -146,12 +146,37 @@ dedicated `vitest.config.ts` (the harness `vite.config.ts` sets `root: harness`)
 The addon devDeps are wired as `node_modules/@p2p-songs/*` symlinks (like
 `protocol`).
 
-Next: **P-4** (Dexie persistence: library/playlists/installed-addons/settings +
-queue-identity, and catalog fan-out/merge across addons) or **P-5** (UI). A small
-**position-timing** follow-up would close three deferrals at once (a monitor over
-the real `timeupdate` stream vs `track.durationMs`): the ~30 s re-prefetch net,
-the anticipatory crossfade trigger (§4c), and precise `setPositionState`. Also
-deferred within P-3: cross-provider stream ranking, TanStack Query wrapper (P-5).
+**P-4 persistence + catalog fan-out — DONE (2026-07-21).** **149 tests;
+typecheck + build green.**
+- **`src/core/persistence/`** (§6) — a **store port + adapters**, not a direct
+  Dexie binding (§9 decision 2): `PlayerRepository` owns the rules and is tested
+  against `MemoryStore`; `DexieStore` is the thin IndexedDB adapter, proven with
+  `fake-indexeddb` (incl. surviving a fresh connection = reload). Covers library,
+  playlists, installed addons, settings, queue identity; every record has
+  `updatedAt` for the P-7 sync adapter.
+- **Two load-bearing rules, enforced + tested:** *persist identity, not resolved
+  media* — `saveQueue` strips every `resolution`, `loadQueue` rebuilds each item
+  `idle`, asserted down to "the bearer URL never reaches the store"; and
+  *installed addons are secret-bearing* (§6a) — own table, `configured` flag,
+  `redactManifestUrl()` the only sanctioned way to render one.
+- **`AddonCollection.search`** (§6) — cross-addon catalog fan-out: parallel over
+  every addon advertising a searchable catalog for the type, **merged + deduped
+  by content id** (install-order priority).
+- **`core/addon/fan-out.ts` — one bounded-fan-out helper.** `askBounded` (child
+  signal + per-provider deadline, never rejects) now backs the stream resolver,
+  `getMeta`, and `search`. Folding `getMeta` onto it also closed a latent
+  hung-provider stall in its sequential walk.
+- **Deferred:** wiring the repository to the engine (debounced autosave +
+  hydrate-on-boot) belongs with the app shell in **P-5**; playlist item-grain
+  modelling is a P-7 sync refinement (§6b).
+
+Next: **P-5** (UI: search/browse, now-playing, queue, library, addon manager +
+the theming seam — and the first thing with a lifecycle to hang persistence
+autosave/hydration on). A small **position-timing** follow-up would close three
+deferrals at once (a monitor over the real `timeupdate` stream vs
+`track.durationMs`): the ~30 s re-prefetch net, the anticipatory crossfade
+trigger (§4c), and precise `setPositionState`. Also deferred: cross-provider
+stream ranking, TanStack Query wrapper (P-5).
 Build order: [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) §10.
 
 ## Being audited?

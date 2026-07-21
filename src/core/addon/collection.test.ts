@@ -1,10 +1,20 @@
 import { describe, it, expect } from "vitest";
 import { AddonCollection } from "./collection.js";
 import { AddonUnreachableError } from "./http.js";
-import { FakeHttp } from "./fake-http.js";
+import { FakeHttp, abortError } from "./fake-http.js";
 import type { Manifest } from "@p2p-songs/protocol";
 
 const ARTIST = "mbid:artist:33333333-3333-3333-3333-333333333333";
+const T1 = "mbid:recording:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+const T2 = "mbid:recording:bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+const T3 = "mbid:recording:cccccccc-cccc-cccc-cccc-cccccccccccc";
+const trackPreview = (id: string, name: string) => ({ type: "track", id, name });
+/** A /catalog or /meta route that accepts the connection then never answers. */
+const hang = (_url: string, signal?: AbortSignal) =>
+  new Promise<{ status: number; body: unknown }>((_res, reject) => {
+    if (signal?.aborted) reject(abortError());
+    else signal?.addEventListener("abort", () => reject(abortError()), { once: true });
+  });
 
 function manifest(over: Partial<Manifest> & Pick<Manifest, "id">): Manifest {
   return {
@@ -146,5 +156,102 @@ describe("AddonCollection", () => {
 
     const meta = await collection.getMeta("artist", ARTIST);
     expect(meta?.name).toBe("The Artist");
+  });
+
+  it("getMeta bounds a hung provider and falls through to a healthy one (A-008)", async () => {
+    const http = new FakeHttp();
+    const collection = new AddonCollection({ httpGet: http.get }, { providerTimeoutMs: 20 });
+    http.on("https://m1.example/manifest.json", () => ({ status: 200, body: metaManifest("m1") }));
+    http.on("https://m2.example/manifest.json", () => ({ status: 200, body: metaManifest("m2") }));
+    http.when((u) => u.startsWith("https://m1.example/meta/"), hang); // never answers
+    http.when((u) => u.startsWith("https://m2.example/meta/"), () => validMeta);
+    await collection.install("https://m1.example/manifest.json");
+    await collection.install("https://m2.example/manifest.json");
+
+    await expect(collection.getMeta("artist", ARTIST)).resolves.toMatchObject({ name: "The Artist" });
+  });
+});
+
+// --- catalog search fan-out (P-4) ---
+
+const catalogManifest = (id: string) =>
+  manifest({
+    id,
+    resources: ["catalog"],
+    types: ["track"],
+    idPrefixes: ["mbid:recording:"],
+    catalogs: [{ type: "track", id: "search", name: "Songs", extra: [{ name: "search", isRequired: true }] }],
+  });
+
+/** Install a catalog addon whose /catalog/track/search route returns `body`. */
+async function catalogProvider(
+  http: FakeHttp,
+  collection: AddonCollection,
+  host: string,
+  id: string,
+  route: (url: string, signal?: AbortSignal) => { status: number; body: unknown } | Promise<{ status: number; body: unknown }>,
+): Promise<void> {
+  http.on(`${host}/manifest.json`, () => ({ status: 200, body: catalogManifest(id) }));
+  http.when((u) => u.startsWith(`${host}/catalog/track/`), route);
+  await collection.install(`${host}/manifest.json`);
+}
+
+describe("AddonCollection.search", () => {
+  it("merges results across catalog addons and dedupes by id (install order wins)", async () => {
+    const http = new FakeHttp();
+    const collection = new AddonCollection({ httpGet: http.get });
+    await catalogProvider(http, collection, "https://c1.example", "c1", () => ({
+      status: 200,
+      body: { metas: [trackPreview(T1, "Song 1 (c1)"), trackPreview(T2, "Song 2 (c1)")] },
+    }));
+    await catalogProvider(http, collection, "https://c2.example", "c2", () => ({
+      status: 200,
+      body: { metas: [trackPreview(T2, "Song 2 (c2)"), trackPreview(T3, "Song 3 (c2)")] },
+    }));
+
+    const metas = await collection.search("track", "song");
+    expect(metas.map((m) => m.id)).toEqual([T1, T2, T3]);
+    expect(metas.find((m) => m.id === T2)?.name).toBe("Song 2 (c1)"); // first provider wins the dup
+  });
+
+  it("isolates a down catalog provider and returns the healthy one's results", async () => {
+    const http = new FakeHttp();
+    const collection = new AddonCollection({ httpGet: http.get });
+    await catalogProvider(http, collection, "https://c1.example", "c1", () => ({ status: 503, body: {} }));
+    await catalogProvider(http, collection, "https://c2.example", "c2", () => ({
+      status: 200,
+      body: { metas: [trackPreview(T1, "Song 1")] },
+    }));
+
+    await expect(collection.search("track", "song")).resolves.toEqual([expect.objectContaining({ id: T1 })]);
+  });
+
+  it("bounds a hung catalog provider (one addon can't stall search)", async () => {
+    const http = new FakeHttp();
+    const collection = new AddonCollection({ httpGet: http.get }, { providerTimeoutMs: 20 });
+    await catalogProvider(http, collection, "https://c1.example", "c1", hang);
+    await catalogProvider(http, collection, "https://c2.example", "c2", () => ({
+      status: 200,
+      body: { metas: [trackPreview(T1, "Song 1")] },
+    }));
+
+    await expect(collection.search("track", "song")).resolves.toEqual([expect.objectContaining({ id: T1 })]);
+  });
+
+  it("throws only when every catalog provider is unreachable", async () => {
+    const http = new FakeHttp();
+    const collection = new AddonCollection({ httpGet: http.get });
+    await catalogProvider(http, collection, "https://c1.example", "c1", () => ({ status: 503, body: {} }));
+    await catalogProvider(http, collection, "https://c2.example", "c2", () => ({ status: 500, body: {} }));
+
+    await expect(collection.search("track", "song")).rejects.toBeInstanceOf(AddonUnreachableError);
+  });
+
+  it("returns [] when no installed addon has a searchable catalog for the type", async () => {
+    const http = new FakeHttp();
+    const collection = new AddonCollection({ httpGet: http.get });
+    serve(http, "https://s.example", manifest({ id: "s", resources: ["stream"], types: ["track"] }));
+    await collection.install("https://s.example/manifest.json");
+    await expect(collection.search("track", "song")).resolves.toEqual([]);
   });
 });

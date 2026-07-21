@@ -10,7 +10,7 @@
  *   with provider-wide backoff (§4b).
  */
 export { AddonClient, type AddonClientOptions, type BadRequestInfo } from "./client.js";
-export { AddonCollection } from "./collection.js";
+export { AddonCollection, type AddonCollectionOptions } from "./collection.js";
 export { AddonStreamResolver, type AddonStreamResolverOptions } from "./stream-resolver.js";
 export { ProviderHealth, type ProviderHealthOptions } from "./provider-health.js";
 export {

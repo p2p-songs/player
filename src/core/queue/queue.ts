@@ -133,6 +133,9 @@ export function append(queue: Queue, tracks: TrackRef[], idGen: IdGen): Queue {
     // Appending after the current run of play is the least-surprising placement,
     // in both shuffle modes.
     playOrder: [...queue.playOrder, ...newIds],
+    // Adding to an empty/unselected queue must select the first new item, else
+    // the queue holds a song but has no cursor to play (audit A-007).
+    currentItemId: queue.currentItemId ?? newIds[0]!,
   };
 }
 
@@ -154,7 +157,14 @@ export function insertAfter(queue: Queue, afterId: QueueItemId | null, tracks: T
   if (afterId && pAt !== -1) playOrder.splice(pAt + 1, 0, ...newIds);
   else playOrder.push(...newIds);
 
-  return { ...queue, itemsById, canonicalOrder, playOrder };
+  return {
+    ...queue,
+    itemsById,
+    canonicalOrder,
+    playOrder,
+    // Select the first inserted item if the queue had no cursor (audit A-007).
+    currentItemId: queue.currentItemId ?? newIds[0]!,
+  };
 }
 
 /** Remove an item by id, keeping every structure consistent. If it was current, advance first. */

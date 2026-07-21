@@ -70,6 +70,14 @@ export class Engine {
 
   /** token → stamp, so audio completions map back to the attempt that started them. */
   private readonly loadTokens = new Map<string, Stamp>();
+  /**
+   * Per-item id → the attemptId of the resolution operation currently allowed to
+   * write that item's `resolution`. A superseded resolve that lands late fails
+   * this check and commits nothing — the queue cache is stamp-gated, not just the
+   * playback FSM (audit A-007). `attemptId` is a session-monotonic counter, so it
+   * uniquely identifies an operation.
+   */
+  private readonly resolutionOp = new Map<QueueItemId, number>();
   /** Per-current-item fallback budget (reset when a new item starts). */
   private itemFallback = { reResolved: false };
   /** Consecutive across-item failures with no successful play in between. */
@@ -121,9 +129,14 @@ export class Engine {
   play(): void {
     if (this.playback.status === "paused") {
       this.dispatch({ type: "PLAY" });
-    } else if (this.playback.status === "idle" && this.queue.currentItemId) {
-      this.resetBreaker();
-      this.startItem(this.queue.currentItemId);
+    } else if (this.playback.status === "idle") {
+      // Fall back to the head of play order if there's no explicit cursor yet —
+      // e.g. after appending the first item to an empty queue (audit A-007).
+      const start = this.queue.currentItemId ?? this.queue.playOrder[0] ?? null;
+      if (start) {
+        this.resetBreaker();
+        this.startItem(start);
+      }
     }
   }
 
@@ -220,10 +233,23 @@ export class Engine {
     }
   }
 
+  /** Record `stamp` as the operation now allowed to write `itemId`'s resolution. */
+  private claimResolution(stamp: Stamp): void {
+    this.resolutionOp.set(stamp.itemId, stamp.attemptId);
+  }
+
+  /** True only if `stamp` is still the current resolution operation for its item. */
+  private ownsResolution(stamp: Stamp): boolean {
+    return this.resolutionOp.get(stamp.itemId) === stamp.attemptId;
+  }
+
   /** Kick off a fresh resolution for the current attempt and feed the result to the FSM. */
   private beginResolve(item: QueueItem, stamp: Stamp): void {
+    this.claimResolution(stamp);
     this.queue = setResolution(this.queue, stamp.itemId, { status: "resolving" });
     this.scheduler.resolve(item, stamp).then((outcome) => {
+      // A superseded resolve that completes anyway must commit nothing (audit A-007).
+      if (!this.ownsResolution(stamp)) return;
       if (outcome.ok) {
         const picked = pickPlayable(outcome.streams, 0);
         if (!picked) {
@@ -245,8 +271,9 @@ export class Engine {
   /** Try a specific already-resolved stream (same item, new attempt) — the fallback walk. */
   private tryStream(itemId: QueueItemId, streams: Stream[], idx: number, expiresAt: string | undefined): void {
     const url = streams[idx]!.url!;
-    this.queue = setResolution(this.queue, itemId, resolvedFrom(streams, idx, url, expiresAt));
     const stamp: Stamp = { epoch: this.epoch, itemId, attemptId: ++this.attempt };
+    this.claimResolution(stamp); // this synchronous commit now owns the item's resolution
+    this.queue = setResolution(this.queue, itemId, resolvedFrom(streams, idx, url, expiresAt));
     this.dispatch({ type: "SELECT", epoch: stamp.epoch, itemId, attemptId: stamp.attemptId });
     this.dispatch({ type: "RESOLVED", stamp, url });
   }
@@ -266,9 +293,11 @@ export class Engine {
       const item = getItem(this.queue, id);
       if (!item || item.resolution.status !== "idle") continue;
       const stamp: Stamp = { epoch: this.epoch, itemId: id, attemptId: ++this.attempt };
+      this.claimResolution(stamp);
       this.queue = setResolution(this.queue, id, { status: "resolving" });
       this.scheduler.resolve(item, stamp).then((outcome) => {
-        if (!getItem(this.queue, id)) return;
+        // Drop a prefetch result that a newer op for the same item has superseded (audit A-007).
+        if (!getItem(this.queue, id) || !this.ownsResolution(stamp)) return;
         if (outcome.ok) {
           const picked = pickPlayable(outcome.streams, 0);
           this.queue = picked

@@ -3,6 +3,7 @@ import type { RecordingId } from "@p2p-songs/protocol";
 import type { TrackRef, Rng } from "./types.js";
 import { counterIdGen } from "./types.js";
 import {
+  emptyQueue,
   createQueue,
   nextId,
   prevId,
@@ -141,6 +142,29 @@ describe("insert / remove / move keep every structure consistent", () => {
     q = append(q, [track(7)], gen);
     expect(q.canonicalOrder).toEqual(["q1", "q2", "q3"]);
     expect(q.playOrder).toEqual(["q1", "q2", "q3"]);
+  });
+
+  it("adding to an empty/unselected queue selects the first new item (A-007)", () => {
+    const gen = counterIdGen();
+    // append into a fresh empty queue
+    let q = append(emptyQueue(), [track(1)], gen);
+    expect(q.currentItemId).toBe("q1");
+    // insertAfter into an empty queue
+    q = insertAfter(emptyQueue(), null, [track(2)], counterIdGen("i"));
+    expect(q.currentItemId).toBe("i1");
+    // remove-last → append re-selects
+    let q2 = createQueue(tracks(1), counterIdGen("r")); // r1, current r1
+    q2 = removeItem(q2, "r1"); // now empty, current null
+    expect(q2.currentItemId).toBeNull();
+    q2 = append(q2, [track(5)], counterIdGen("r2"));
+    expect(q2.currentItemId).toBe("r21");
+  });
+
+  it("appending to a non-empty queue does not move the cursor", () => {
+    const gen = counterIdGen();
+    let q = createQueue(tracks(2), gen); // current q1
+    q = append(q, [track(3)], gen);
+    expect(q.currentItemId).toBe("q1"); // unchanged
   });
 });
 

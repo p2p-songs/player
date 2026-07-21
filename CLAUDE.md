@@ -69,8 +69,16 @@ typecheck + build green.**
 - **`src/core/engine`** — the orchestrator: JIT prefetch (next 1–2 on play),
   fallback (walk ranked streams → re-resolve once → skip-ahead), the **bounded
   failure circuit-breaker** (resets on a successful play), and the full
-  engine-level **async-race matrix** (resolve-after-skip, reorder-during-resolve,
-  failure-after-success, stale-token drops).
+  engine-level **async-race matrix**. **Stamp-gating covers the queue-resolution
+  cache, not just the FSM (audit A-007):** a per-item `resolutionOp` attemptId is
+  checked before every `QueueItem.resolution` commit, so a superseded resolve
+  can't poison the cache with a stale bearer URL. Adding the first item to an
+  empty queue sets a cursor (+ `play()` falls back to `playOrder[0]`).
+
+**A-007 (2026-07-20) reconciled.** Known **deferred** gaps recorded in
+ARCHITECTURE §4b: provider-wide exponential backoff and the ~30 s re-prefetch net
+→ P-3; consecutive-threshold vs sweep-set is a deliberate simplification. 46
+tests.
 
 **Testing/tooling note:** run `./node_modules/.bin/tsc …` / `vitest` directly —
 pnpm's pre-run auto-install re-prompts for the esbuild build script.

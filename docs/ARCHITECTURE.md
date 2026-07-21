@@ -219,8 +219,18 @@ mechanism.** Every resolve/load attempt is stamped with an immutable
   you've skipped away simply gets dropped; it can never overwrite the current
   item's resolution, preload the wrong URL, or push the FSM to `buffering` for
   a track no longer selected.
+- **The stamp gate applies to the queue-resolution *cache*, not only the FSM
+  (audit A-007).** `QueueItem.resolution` is the memory cache `startItem` reuses,
+  so a superseded resolve landing late must commit *nothing* to it — otherwise it
+  poisons the cache with a stale/expired bearer URL that a later replay would
+  reuse. The engine tracks, per item, the `attemptId` of the operation currently
+  allowed to write that item's resolution, and checks it immediately before every
+  commit (`beginResolve`, `prefetchUpcoming`, `tryStream`). A stale outcome
+  performs no mutation and no notification.
 - Test matrix (required): resolve-after-skip, failure-after-success,
-  reorder-during-resolve, and double-completion.
+  reorder-during-resolve, double-completion — asserting **both** the FSM state
+  **and** `QueueItem.resolution` (old-success-after-new-success,
+  old-failure-after-new-success, current-vs-prefetch supersession).
 
 **Failure termination (the queue must be able to stop).** "Never freeze" does
 not mean "skip forever." A provider outage must not become an unbounded
@@ -237,6 +247,23 @@ the UI looks busy. Rules:
   get exponential backoff, not per-track retries.
 - **`repeat: "all"` and autoplay/radio must not bypass the bound** — a wrap or
   an appended radio batch of unresolvable items still counts against the sweep.
+
+**P-1 implementation status of these rules (explicit, so gaps aren't rediscovered):**
+- *Implemented + tested:* the **bounded consecutive-failure threshold** (trips to
+  terminal `error`), reset on successful play / user action, and the
+  `repeat: "all"` non-bypass (the counter only resets on success, so a wrap stays
+  bounded — regression-tested).
+- *Deliberate simplification:* P-1 uses the **consecutive-failure** variant only,
+  not the "every eligible item failed once" **sweep-set**. Both bound the loop;
+  the sweep-set is a possible refinement, not a correctness gap.
+- *Deferred to P-3 (real addon client):* **provider-wide exponential backoff**
+  for a globally-unreachable/auth-failing addon is not yet implemented — with a
+  single in-process resolver there is no provider to back off from. It must land
+  when the multi-addon client does, distinguishing "this track failed" from "this
+  addon is down."
+- *Deferred:* the **"~30 s remaining" re-prefetch safety net** (§5.1) — P-1
+  prefetches on entering `playing` only; the position-triggered top-up lands with
+  real playback timing.
 
 **Decision: a hand-rolled discriminated-union finite state machine** (state
 is a union like `{ status: "playing"; … } | { status: "resolving"; … }`;

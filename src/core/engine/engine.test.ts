@@ -100,6 +100,15 @@ describe("failure circuit-breaker (bounded skip-ahead)", () => {
     expect(playback(engine).status).toBe("error");
   });
 
+  it("repeat:all does not let a failing queue bypass the breaker (bound survives the wrap)", async () => {
+    const { engine, resolver } = makeEngine(2, { maxConsecutiveFailures: 2 });
+    for (const n of ["1", "2"]) resolver.script(rec(n), { ok: false, reason: "down" });
+    engine.setRepeat("all");
+    engine.play();
+    for (let i = 0; i < 12; i++) await flush();
+    expect(playback(engine).status).toBe("error");
+  });
+
   it("a successful play resets the breaker", async () => {
     const { engine, resolver, audio } = makeEngine(3, { maxConsecutiveFailures: 2 });
     resolver.script(rec("1"), { ok: false, reason: "down" }); // q1 fails
@@ -147,5 +156,83 @@ describe("stale-completion safety (engine-level async-race matrix)", () => {
     expect(playback(engine).status).toBe("playing");
     audio.emitError("stale", "bogus-token"); // unknown token → ignored
     expect(playback(engine).status).toBe("playing");
+  });
+
+  // A-007 HIGH: the queue-resolution cache must be stamp-gated too, not just the FSM.
+  it("old success after new success does NOT overwrite the queue's resolution cache", async () => {
+    const { engine, resolver } = makeEngine(1);
+    const dOld = resolver.manual(rec("1"));
+    engine.play(); // attempt 1 for q1 (pending)
+    const dNew = resolver.manual(rec("1"));
+    engine.selectItem("q1"); // attempt 2 for q1 supersedes attempt 1
+    dNew.resolve({ ok: true, streams: [urlStream("https://fresh")] });
+    await flush();
+    dOld.resolve({ ok: true, streams: [urlStream("https://stale")] }); // late, superseded
+    await flush();
+    expect(playback(engine)).toMatchObject({ status: "buffering", url: "https://fresh" });
+    const r = res(engine, "q1");
+    expect(r.status).toBe("resolved");
+    expect(r).toMatchObject({ url: "https://fresh" }); // NOT poisoned to https://stale
+  });
+
+  it("an old failure after a new success does not clobber the resolved cache", async () => {
+    const { engine, resolver } = makeEngine(1);
+    const dOld = resolver.manual(rec("1"));
+    engine.play();
+    const dNew = resolver.manual(rec("1"));
+    engine.selectItem("q1");
+    dNew.resolve({ ok: true, streams: [urlStream("https://fresh")] });
+    await flush();
+    dOld.resolve({ ok: false, reason: "old failed" }); // stale failure
+    await flush();
+    expect(res(engine, "q1")).toMatchObject({ status: "resolved", url: "https://fresh" });
+  });
+
+  it("a superseded prefetch result cannot overwrite the current attempt's resolution", async () => {
+    const { engine, resolver, audio } = makeEngine(2);
+    // q1 default-resolves and plays → triggers prefetch of q2 (make it hang).
+    const dPrefetch = resolver.manual(rec("2"));
+    engine.play();
+    await flush();
+    audio.emitLoaded(); // playing q1 → prefetch q2 starts (dPrefetch pending)
+    await flush();
+    // Now the user jumps to q2 → a current attempt supersedes the prefetch.
+    const dCurrent = resolver.manual(rec("2"));
+    engine.selectItem("q2");
+    dCurrent.resolve({ ok: true, streams: [urlStream("https://current")] });
+    await flush();
+    dPrefetch.resolve({ ok: true, streams: [urlStream("https://prefetch")] }); // late
+    await flush();
+    expect(res(engine, "q2")).toMatchObject({ status: "resolved", url: "https://current" });
+  });
+});
+
+describe("stream freshness (expiry hint)", () => {
+  it("re-resolves a cached item whose resolution has expired, instead of reusing a dead URL", async () => {
+    const { engine, resolver, audio } = makeEngine(2);
+    resolver.script(rec("1"), { ok: true, streams: [urlStream("https://a", { behaviorHints: { expiresAt: "2000-01-01T00:00:00Z" } })] });
+    engine.play();
+    await flush();
+    audio.emitLoaded();
+    await flush(); // playing q1; q2 prefetched
+    expect(resolver.calls.filter((c) => c === rec("1")).length).toBe(1);
+    engine.next(); // → q2
+    engine.prev(); // → back to q1, whose cached resolution is expired
+    await flush();
+    expect(resolver.calls.filter((c) => c === rec("1")).length).toBe(2); // re-resolved, not reused
+  });
+});
+
+describe("empty-queue append is playable (A-007)", () => {
+  it("appending the first item to an empty queue lets play() start it", async () => {
+    const resolver = new FakeResolver();
+    const audio = new FakeAudio();
+    const engine = new Engine(resolver, audio, { idGen: counterIdGen() });
+    engine.setQueue([]); // empty
+    engine.append([track(1)]);
+    expect(engine.getState().queue.currentItemId).toBe("q1");
+    engine.play();
+    await flush();
+    expect(playback(engine)).toMatchObject({ status: "buffering", itemId: "q1" });
   });
 });

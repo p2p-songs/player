@@ -22,8 +22,21 @@
  */
 export type CspProfile = "dev" | "prod";
 
-/** Loopback origins where a locally-run addon (`serveHTTP`) is reached over http (§6a, §10). */
-const LOOPBACK = "http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*";
+/**
+ * Loopback origins, allowed in **both** profiles.
+ *
+ * The player never runs an addon — an addon is only ever a manifest URL the user
+ * pasted. But that URL may point at a server *the user* runs on their own
+ * machine (`serveHTTP` on `http://127.0.0.1:7003`), which is the intended shape
+ * for a credential-bearing addon like Bitbop: your debrid key stays on your
+ * hardware. `endpoints.ts` permits plain `http` for exactly these hosts and no
+ * others, and this is the matching CSP allowance. A hosted player build with a
+ * self-hosted addon is a supported pairing, so this is not dev-only (§6a, §10).
+ */
+const LOOPBACK_ADDON = ["http://localhost:*", "http://127.0.0.1:*"];
+
+/** Vite's HMR socket — dev only, and never a `media-src`/addon origin. */
+const HMR_SOCKET = ["ws://localhost:*", "ws://127.0.0.1:*"];
 
 export function buildCsp(profile: CspProfile): string {
   const prod = profile === "prod";
@@ -34,8 +47,8 @@ export function buildCsp(profile: CspProfile): string {
       ["'self'", "'unsafe-inline'", "'unsafe-eval'"];
 
   const connectSrc = prod
-    ? ["'self'", "https:", "http://localhost:*", "http://127.0.0.1:*"]
-    : ["'self'", "https:", LOOPBACK];
+    ? ["'self'", "https:", ...LOOPBACK_ADDON]
+    : ["'self'", "https:", ...LOOPBACK_ADDON, ...HMR_SOCKET];
 
   const directives: Record<string, string[] | true> = {
     "default-src": ["'self'"],
@@ -44,8 +57,8 @@ export function buildCsp(profile: CspProfile): string {
     // so a stylesheet-injecting dep can't hard-break the UI. Styles can't run script.
     "style-src": ["'self'", "'unsafe-inline'"],
     "img-src": ["'self'", "https:", "data:", "blob:"],
-    // Audio comes from debrid/CDN https origins and, in dev, loopback addons.
-    "media-src": prod ? ["'self'", "https:", "http://localhost:*", "http://127.0.0.1:*"] : ["'self'", "https:", LOOPBACK],
+    // Audio comes from debrid/CDN https origins, or from a loopback addon.
+    "media-src": ["'self'", "https:", ...LOOPBACK_ADDON],
     "connect-src": connectSrc,
     "font-src": ["'self'", "data:"],
     "worker-src": ["'self'", "blob:"],

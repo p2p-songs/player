@@ -65,10 +65,10 @@ export function proceduralBackground(seed: string): string {
   return pattern(a, b, c);
 }
 
-export function ProceduralArt({ seed, size }: { seed: string; size: number }) {
+export function ProceduralArt({ seed, size, round = false }: { seed: string; size: number; round?: boolean }) {
   return (
     <div
-      className="shrink-0 border-2 border-border"
+      className={round ? "shrink-0 rounded-full border-2 border-border" : "shrink-0 border-2 border-border"}
       style={{ width: size, height: size, background: proceduralBackground(seed) }}
       aria-hidden="true"
     />

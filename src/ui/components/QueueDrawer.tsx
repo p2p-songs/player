@@ -1,7 +1,7 @@
 /** Up-next drawer. Reads play order, so it stays correct under shuffle. */
 import { useUpNext, usePlayer } from "../viewmodels/useEngineState.js";
 import { useUi } from "../../app/store.js";
-import { Artwork, formatTime } from "./common.js";
+import { PlayableArtwork, formatTime } from "./common.js";
 import { Row, RowIndex, RowMain, RowTime, Rows, StateBlock } from "./primitives.js";
 import { Button } from "@/components/ui/button";
 
@@ -32,7 +32,7 @@ export function QueueDrawer() {
             {upNext.map((item, i) => (
               <Row key={item.id} onClick={() => selectItem(item.id)}>
                 <RowIndex>{i + 1}</RowIndex>
-                <Artwork src={item.track.artwork} alt={item.track.title} seed={item.track.recordingId} size={32} />
+                <PlayableArtwork src={item.track.artwork} alt={item.track.title} seed={item.track.recordingId} size={32} />
                 <RowMain title={item.track.title} sub={item.track.artist ?? "Unknown artist"} />
                 <RowTime>{formatTime(item.track.durationMs)}</RowTime>
               </Row>

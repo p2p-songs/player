@@ -16,7 +16,8 @@ import { useUnifiedSearch, isUnreachable, previewToTrack } from "../viewmodels/u
 import { usePlayer } from "../viewmodels/useEngineState.js";
 import { useInstalledAddons } from "../viewmodels/useAddons.js";
 import { useDebounced } from "../viewmodels/useDebounced.js";
-import { Artwork } from "../components/common.js";
+import { ChevronRightIcon } from "lucide-react";
+import { Artwork, PlayableArtwork } from "../components/common.js";
 import {
   Loading,
   PageTitle,
@@ -131,23 +132,23 @@ export function SearchScreen({
         <>
           <ResultSection
             title="Artists"
+            kind="artist"
             items={results!.artists.slice(0, PRECISE_LIMIT)}
             onOpen={(item) => onOpenArtist(item.id, item.name)}
             // An artist row is only an id and a name — a subtitle would be noise.
             showSub={false}
-            chevron="›"
           />
           <ResultSection
             title="Albums"
+            kind="album"
             items={results!.albums.slice(0, PRECISE_LIMIT)}
             onOpen={(item) => onOpenAlbum(item.id, item.name)}
-            chevron="›"
           />
           <ResultSection
             title="Songs"
+            kind="track"
             items={results!.tracks}
             onOpen={(item) => playTracks([previewToTrack(item)])}
-            chevron="▶"
           />
         </>
       )}
@@ -155,17 +156,22 @@ export function SearchScreen({
   );
 }
 
+/**
+ * `kind` decides the row's affordance, not just its icon: songs play, so their
+ * artwork carries a play badge on hover; artists and albums open, so they get a
+ * chevron, and artists are circular. See {@link PlayableArtwork}.
+ */
 function ResultSection({
   title,
+  kind,
   items,
   onOpen,
-  chevron,
   showSub = true,
 }: {
   title: string;
+  kind: "artist" | "album" | "track";
   items: MetaPreview[];
   onOpen: (item: MetaPreview) => void;
-  chevron: string;
   showSub?: boolean;
 }) {
   if (items.length === 0) return null;
@@ -175,9 +181,23 @@ function ResultSection({
       <Rows>
         {items.map((item) => (
           <Row key={item.id} onClick={() => onOpen(item)}>
-            <Artwork src={item.poster} alt={item.name} seed={item.id} size={38} />
+            {kind === "track" ? (
+              <PlayableArtwork src={item.poster} alt={item.name} seed={item.id} size={38} />
+            ) : (
+              <Artwork
+                src={item.poster}
+                alt={item.name}
+                seed={item.id}
+                size={38}
+                round={kind === "artist"}
+              />
+            )}
             <RowMain title={item.name} sub={showSub ? (item.description ?? "Unknown artist") : undefined} />
-            <RowTime>{chevron}</RowTime>
+            {kind === "track" ? null : (
+              <RowTime>
+                <ChevronRightIcon className="size-4" />
+              </RowTime>
+            )}
           </Row>
         ))}
       </Rows>

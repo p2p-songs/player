@@ -325,6 +325,25 @@ The app is a React/Vite shell at `index.html` → `src/app/main.tsx`.
   a UI starts lying. The source *readout* is real.
 - **`--player-bar-h`** is one token because three places must agree on the bar's
   height (shell grid row, queue drawer `bottom`, playback alert `bottom`).
+- **Row affordances are one vocabulary, applied everywhere (2026-07-22).**
+  **A play badge on the artwork means the row plays; a chevron means it opens.**
+  A trailing `▶` vs `›` did not work: they're a few pixels apart in meaning, sit
+  in the corner of the eye, and say nothing until you've learned them. The badge
+  appears under the pointer at the instant of the click and only on rows that
+  play (`PlayableArtwork`; `RowIndex playable` for rows with a number instead of
+  art). Artists are additionally **circular** — near-universal, and it separates
+  an artist row from an album row before any text is read. Applies to library,
+  search, home, queue, album and artist screens alike.
+- **`Row`'s frame owns the background, not its button.** A row with a trailing
+  `action` can't nest one button in another; a body button *beside* the action
+  made the hover highlight stop short and split the row in two. The frame
+  highlights, the body button is transparent and padded clear, the action layers
+  over it. The frame is also the `group` the badges hang off.
+- **`RowAction` reveals on hover/focus** — removing is infrequent and mildly
+  destructive, and four `Remove` buttons in a column read as the page's primary
+  action. Its `label` carries the whole meaning and uses the verb for the kind
+  ("Unfollow Taylor Swift"), because the app already saves three ways (heart /
+  Save / Follow) and a bare "Remove" would be a fourth vocabulary.
 - **Chrome surfaces need `ChromeButton`, never RetroUI's `outline`/`ghost`.**
   Those variants are built for the cream canvas: `outline` sets `bg-background`
   and *no* text colour, so on chrome it inherits `--chrome-foreground` and

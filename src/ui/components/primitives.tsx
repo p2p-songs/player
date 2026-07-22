@@ -10,6 +10,7 @@
  * failure as a thousand hardcoded hex values, with nothing able to catch it.
  */
 import type { ReactNode } from "react";
+import { PlayIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function PageTitle({ children, className }: { children: ReactNode; className?: string }) {
@@ -46,25 +47,85 @@ export function Rows({
   );
 }
 
-/** One row. Always a real button so it is focusable and keyboard-operable. */
+/**
+ * One row. Always a real button so it is focusable and keyboard-operable.
+ *
+ * **The frame owns the background, not the button.** A row can carry its own
+ * trailing `action`, and a button may not nest one; the obvious fix — a body
+ * button beside the action — made the hover highlight stop short of the action
+ * and split the row visibly in two. So the frame is what highlights, the body
+ * button is transparent and padded clear of the action, and the action layers
+ * over the frame. One row, one hover surface.
+ *
+ * The frame is also the `group`, which is how a row's contents (a play badge on
+ * artwork, a reveal-on-hover action) can respond to the row being hovered.
+ */
 export function Row({
   children,
   onClick,
+  action,
   current = false,
   className,
 }: {
   children: ReactNode;
   onClick?: () => void;
+  /** A control rendered at the trailing edge, outside the row's own button. */
+  action?: ReactNode;
   current?: boolean;
   className?: string;
 }) {
-  const shared = "flex w-full items-center gap-3 border-b-2 border-border px-4 py-2.5 text-left last:border-b-0";
-  if (!onClick) return <div className={cn(shared, current && "bg-accent", className)}>{children}</div>;
+  const body = cn(
+    "flex min-w-0 flex-1 items-center gap-3 py-2.5 pl-4 text-left",
+    action ? "pr-12" : "pr-4",
+  );
+  return (
+    <div
+      className={cn(
+        "group relative flex w-full items-center border-b-2 border-border transition-colors last:border-b-0",
+        current ? "bg-accent" : onClick ? "hover:bg-muted" : undefined,
+        className,
+      )}
+    >
+      {onClick ? (
+        <button type="button" onClick={onClick} className={body}>
+          {children}
+        </button>
+      ) : (
+        <div className={body}>{children}</div>
+      )}
+      {action ? <div className="absolute inset-y-0 right-2 flex items-center">{action}</div> : null}
+    </div>
+  );
+}
+
+/**
+ * A row's trailing control, revealed on hover or focus.
+ *
+ * Removing something is infrequent and mildly destructive, so it should not be
+ * the loudest, most-repeated element on a screen — four `Remove` buttons in a
+ * column read as the page's primary action, which they are the opposite of. It
+ * appears the moment the pointer is on the row, which is the moment anyone looks
+ * for it, and `focus-visible` keeps it reachable by keyboard.
+ *
+ * `label` carries the whole meaning, so it should name the item and the actual
+ * verb for its kind ("Unfollow Taylor Swift", not "Remove").
+ */
+export function RowAction({
+  label,
+  onClick,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  children: ReactNode;
+}) {
   return (
     <button
       type="button"
+      aria-label={label}
+      title={label}
       onClick={onClick}
-      className={cn(shared, "transition-colors hover:bg-muted", current && "bg-accent hover:bg-accent", className)}
+      className="grid size-7 place-items-center border-2 border-transparent text-muted-foreground opacity-0 transition-all group-hover:opacity-100 hover:border-border hover:bg-destructive hover:text-destructive-foreground focus-visible:opacity-100"
     >
       {children}
     </button>
@@ -72,27 +133,22 @@ export function Row({
 }
 
 /**
- * The clickable body of a row that also carries its own trailing actions.
- *
- * `Row` is itself a button, and a button may not nest one — so a row with a
- * Remove control makes its *main area* the button instead. The negative margins
- * pull the hit area back out to the row's full height, so it still behaves like
- * one target rather than a link floating inside a box.
+ * A track number. Where the row plays, it swaps for a play badge on hover — the
+ * artwork-badge affordance for rows that have no artwork to put it on.
  */
-export function RowBody({ children, onClick }: { children: ReactNode; onClick: () => void }) {
+export function RowIndex({ children, playable = false }: { children: ReactNode; playable?: boolean }) {
+  const base = "w-6 shrink-0 font-mono text-xs tabular-nums text-muted-foreground";
+  if (!playable) return <span className={base}>{children}</span>;
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="-mx-4 -my-2.5 flex min-w-0 flex-1 items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-muted"
-    >
-      {children}
-    </button>
+    <span className={cn(base, "relative grid place-items-center")}>
+      <span className="transition-opacity group-hover:opacity-0 group-focus-within:opacity-0">{children}</span>
+      <PlayIcon
+        className="absolute size-3.5 text-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+        fill="currentColor"
+        aria-hidden="true"
+      />
+    </span>
   );
-}
-
-export function RowIndex({ children }: { children: ReactNode }) {
-  return <span className="w-6 shrink-0 font-mono text-xs tabular-nums text-muted-foreground">{children}</span>;
 }
 
 /** Title over subtitle, both truncating — the shape of nearly every row. */

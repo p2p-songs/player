@@ -839,6 +839,18 @@ otherwise scatters styling across every call site, and a thousand
 `border-2 border-black shadow-md` in screens is the same failure as a thousand
 hardcoded hex values — with nothing able to catch it.
 
+**A row must say what clicking it will do.** Lists here mix kinds — a library or
+a search result holds songs, albums and artists together — and a song *plays*
+while an album or artist *opens a screen*. That difference was carried by a
+trailing `▶` versus `›`, which is not a distinction anyone reads: two similar
+glyphs, in the corner of the eye, meaningless until learned. The vocabulary is
+now **a play badge on the artwork for rows that play, a chevron for rows that
+navigate**, with artists additionally circular. The badge is the one that
+matters: it appears under the pointer at the moment of the click, and its
+absence is as informative as its presence. `RowAction` (remove, unfollow)
+reveals on hover and focus rather than sitting on every row, because a
+repeated destructive control otherwise becomes the loudest thing on the screen.
+
 **Chrome is a second surface, not a darker canvas.** The sidebar, player bar and
 now-playing view sit on `--chrome`, and registry components assume the cream one:
 RetroUI's `outline` button sets `bg-background` and no text colour, so on chrome

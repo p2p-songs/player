@@ -11,12 +11,21 @@
  * builds yet; they are deliberately not folded in here.
  */
 import { useState } from "react";
+import { ChevronRightIcon, XIcon } from "lucide-react";
 import type { LibraryEntry } from "../../core/persistence/schema.js";
 import { useLibrary, useRemoveSaved, savedToTrack } from "../viewmodels/useLibrary.js";
 import { usePlayer } from "../viewmodels/useEngineState.js";
-import { Artwork } from "../components/common.js";
-import { Loading, PageTitle, Row, RowBody, RowMain, RowTime, Rows, StateBlock } from "../components/primitives.js";
-import { Button } from "@/components/ui/button";
+import { Artwork, PlayableArtwork } from "../components/common.js";
+import {
+  Loading,
+  PageTitle,
+  Row,
+  RowAction,
+  RowMain,
+  RowTime,
+  Rows,
+  StateBlock,
+} from "../components/primitives.js";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 type Filter = "all" | "track" | "album" | "artist";
@@ -100,20 +109,34 @@ export function LibraryScreen({
               ) : (
                 <Rows>
                   {rows.map((entry) => (
-                    <Row key={entry.id}>
-                      <RowBody onClick={() => open(entry)}>
-                        <Artwork src={entry.poster} alt={entry.name} seed={entry.id} size={38} />
-                        <RowMain title={entry.name} sub={subtitle(entry)} />
-                        <RowTime>{entry.kind === "track" ? "▶" : "›"}</RowTime>
-                      </RowBody>
-                      <Button
-                        size="xs"
-                        variant="outline"
-                        aria-label={`Remove ${entry.name} from library`}
-                        onClick={() => remove.mutate(entry.id)}
-                      >
-                        Remove
-                      </Button>
+                    <Row
+                      key={entry.id}
+                      onClick={() => open(entry)}
+                      action={
+                        <RowAction label={removeLabel(entry)} onClick={() => remove.mutate(entry.id)}>
+                          <XIcon className="size-4" />
+                        </RowAction>
+                      }
+                    >
+                      {entry.kind === "track" ? (
+                        // Plays: the badge lands under the pointer on hover.
+                        <PlayableArtwork src={entry.poster} alt={entry.name} seed={entry.id} size={38} />
+                      ) : (
+                        // Opens: square for albums, circular for artists.
+                        <Artwork
+                          src={entry.poster}
+                          alt={entry.name}
+                          seed={entry.id}
+                          size={38}
+                          round={entry.kind === "artist"}
+                        />
+                      )}
+                      <RowMain title={entry.name} sub={subtitle(entry)} />
+                      {entry.kind === "track" ? null : (
+                        <RowTime>
+                          <ChevronRightIcon className="size-4" />
+                        </RowTime>
+                      )}
                     </Row>
                   ))}
                 </Rows>
@@ -135,4 +158,16 @@ function subtitle(entry: LibraryEntry): string {
   if (entry.kind === "artist") return "Artist";
   const kind = entry.kind === "album" ? "Album" : "Song";
   return entry.artistName ? `${kind} · ${entry.artistName}` : kind;
+}
+
+/**
+ * One control, but the right *word* per kind. The app saves three ways — a heart
+ * for songs, Save for albums, Follow for artists — so a single "Remove" would be
+ * a fourth vocabulary. Naming the item too means the label still makes sense read
+ * on its own out of a list of forty.
+ */
+function removeLabel(entry: LibraryEntry): string {
+  if (entry.kind === "artist") return `Unfollow ${entry.name}`;
+  if (entry.kind === "album") return `Remove ${entry.name} from your library`;
+  return `Remove ${entry.name} from your liked songs`;
 }

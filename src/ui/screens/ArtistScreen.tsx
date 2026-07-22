@@ -7,6 +7,7 @@
  */
 import { useArtistAlbums, isUnreachable } from "../viewmodels/useCatalog.js";
 import { useIsSaved, useToggleSaved } from "../viewmodels/useLibrary.js";
+import { ChevronRightIcon } from "lucide-react";
 import { Artwork } from "../components/common.js";
 import { Loading, Muted, PageTitle, Row, RowMain, RowTime, Rows, StateBlock } from "../components/primitives.js";
 import { Button } from "@/components/ui/button";
@@ -85,7 +86,9 @@ export function ArtistScreen({
               <Artwork src={album.poster} alt={album.name} seed={album.id} size={38} />
               {/* The catalog puts the release year here — every row shares the artist. */}
               <RowMain title={album.name} sub={album.description ?? ""} />
-              <RowTime>›</RowTime>
+              <RowTime>
+                <ChevronRightIcon className="size-4" />
+              </RowTime>
             </Row>
           ))}
         </Rows>

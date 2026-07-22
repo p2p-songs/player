@@ -7,8 +7,8 @@ import { useServices } from "../../app/providers.js";
 import { useInstalledAddons } from "../viewmodels/useAddons.js";
 import { usePlayer } from "../viewmodels/useEngineState.js";
 import { useUi } from "../../app/store.js";
-import { Artwork } from "../components/common.js";
-import { Loading, Muted, PageTitle, Row, RowMain, RowTime, Rows, SectionTitle, StateBlock } from "../components/primitives.js";
+import { PlayableArtwork } from "../components/common.js";
+import { Loading, Muted, PageTitle, Row, RowMain, Rows, SectionTitle, StateBlock } from "../components/primitives.js";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
@@ -58,9 +58,13 @@ export function HomeScreen() {
         <Rows>
           {(history.data ?? []).map((event) => (
             <Row key={event.id} onClick={() => playTracks([event.track])}>
-              <Artwork src={event.track.artwork} alt={event.track.title} seed={event.track.recordingId} size={38} />
+              <PlayableArtwork
+                src={event.track.artwork}
+                alt={event.track.title}
+                seed={event.track.recordingId}
+                size={38}
+              />
               <RowMain title={event.track.title} sub={event.track.artist ?? "Unknown artist"} />
-              <RowTime>▶</RowTime>
             </Row>
           ))}
         </Rows>

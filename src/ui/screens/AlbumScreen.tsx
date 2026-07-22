@@ -87,7 +87,7 @@ export function AlbumScreen({ albumId, onBack }: { albumId: string; onBack: () =
             <Rows>
               {tracks.map((track, i) => (
                 <Row key={`${track.recordingId}-${i}`} onClick={() => playTracks(tracks.slice(i))}>
-                  <RowIndex>{i + 1}</RowIndex>
+                  <RowIndex playable>{i + 1}</RowIndex>
                   <RowMain title={track.title} sub={track.artist ?? meta.data?.artistName ?? ""} />
                   <RowTime>{formatTime(track.durationMs)}</RowTime>
                 </Row>

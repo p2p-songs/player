@@ -71,6 +71,9 @@ const fakeMb: MusicBrainzClient = {
   async getArtist(): Promise<MbArtist | undefined> {
     return undefined;
   },
+  async getAlbum(uuid): Promise<MbReleaseDetail | undefined> {
+    return this.getRelease(uuid);
+  },
   async getRelease(uuid): Promise<MbReleaseDetail | undefined> {
     if (uuid !== REL_UUID) return undefined;
     return {

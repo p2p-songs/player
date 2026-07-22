@@ -1,6 +1,7 @@
 /** Album detail: cover, Play/Shuffle, and the track listing. */
 import { useMeta, albumToTracks } from "../viewmodels/useCatalog.js";
 import { usePlayer } from "../viewmodels/useEngineState.js";
+import { useIsSaved, useToggleSaved } from "../viewmodels/useLibrary.js";
 import { Artwork, formatTime } from "../components/common.js";
 import { Loading, Muted, PageTitle, Row, RowIndex, RowMain, RowTime, Rows, StateBlock } from "../components/primitives.js";
 import { Button } from "@/components/ui/button";
@@ -8,6 +9,8 @@ import { Button } from "@/components/ui/button";
 export function AlbumScreen({ albumId, onBack }: { albumId: string; onBack: () => void }) {
   const meta = useMeta("album", albumId);
   const { playTracks, setShuffle } = usePlayer();
+  const { data: saved } = useIsSaved(albumId);
+  const toggleSaved = useToggleSaved();
   const tracks = albumToTracks(meta.data);
   const totalMs = tracks.reduce((sum, t) => sum + (t.durationMs ?? 0), 0);
 
@@ -55,6 +58,24 @@ export function AlbumScreen({ albumId, onBack }: { albumId: string; onBack: () =
                   }}
                 >
                   ⤨ Shuffle
+                </Button>
+                <Button
+                  variant="outline"
+                  aria-pressed={saved ?? false}
+                  onClick={() =>
+                    toggleSaved.mutate({
+                      saved: saved ?? false,
+                      item: {
+                        id: meta.data!.id,
+                        kind: "album",
+                        name: meta.data!.name,
+                        ...(meta.data!.artistName ? { artistName: meta.data!.artistName } : {}),
+                        ...(meta.data!.poster ? { poster: meta.data!.poster } : {}),
+                      },
+                    })
+                  }
+                >
+                  {saved ? "♥ Saved" : "♡ Save"}
                 </Button>
               </div>
             </div>

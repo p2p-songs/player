@@ -203,13 +203,28 @@ The app is a React/Vite shell at `index.html` → `src/app/main.tsx`.
   against *injected* code, not a trusted addon's host; and the Trusted Types
   `'default'` policy currently passes through with a redacted warning — a
   monitored escape hatch, to be tightened to a throw after a real-browser pass.
-- **`src/ui/`** — `tokens.css` (the one reference theme, "Dark (Espresso)"),
-  `viewmodels/` (headless hooks over the engine — components own no playback
-  logic, §8a), `components/`, `screens/`.
+- **`src/ui/`** — `globals.css` (the whole visual definition), `viewmodels/`
+  (headless hooks over the engine — components own no playback logic, §8a),
+  `components/`, `screens/`. RetroUI's copied-in components live one level up in
+  `src/components/ui/`.
 - **Screens:** Addons (install by manifest URL only — nothing bundled, §11;
-  URLs shown via `redactManifestUrl`, §6a), Search (cross-addon, Songs/Albums),
-  Album detail, Home (recently played from history), Library (liked), minimal
-  Settings, plus the queue drawer and persistent player bar.
+  URLs shown via `redactManifestUrl`, §6a), Search (one box, all types at once),
+  Artist and Album detail, Home (recently played from history), Library,
+  minimal Settings, plus the queue drawer and persistent player bar.
+- **Library holds identity, not media (§6).** A saved album is an id plus what a
+  row needs to draw — never a track listing, never a stream — so one save path
+  covers all three kinds: the player-bar heart for a song, Save on the album
+  screen, Follow on the artist screen. `useToggleSaved` takes a `SavedItem`
+  rather than a `TrackRef` for exactly that reason. The screen tabs
+  All/Songs/Albums/Artists over one collection sorted by save time, which is why
+  **All** is the default — it's the only tab that answers "what did I just add?".
+  Playlists are stored by the repository and filtered *out* of this screen: they
+  have no detail screen yet, so they'd be rows that go nowhere.
+- **Nav is a stack in the UI store, not local shell state.** `detail: Detail[]`
+  sits beside `view`, and `setView` clears it in the same `set` — held in the
+  shell instead, switching primary view rendered one frame of the *old* view's
+  detail screen. One stack serves every view that can drill down, so
+  search → artist → album and library → artist → album are the same code path.
 - **`usePersistSession`** wires the repository to the engine — the P-4 deferral:
   hydrate the queue on boot, debounced autosave, record plays. Needed
   **`Engine.restoreQueue`** so a restored session keeps its *stable ids* instead
@@ -273,8 +288,9 @@ The app is a React/Vite shell at `index.html` → `src/app/main.tsx`.
   "couldn't reach any addon" while every addon was healthy. Aborting does not
   help — the browser drops the socket but the addon's upstream queue keeps
   draining, so the only fix is not making the request.
-- **Deliberately not built:** router (nav is search→artist→album local state),
-  source-picker modal, Playlists tab, responsive/mobile layout.
+- **Deliberately not built:** router (nav is a stack in the UI store — browser
+  Back still exits the app), source-picker modal, Playlists tab,
+  responsive/mobile layout.
 
 Next: **P-6** (PWA) or **P-7** (accounts/sync), or fill the addon gap —
 `stream-debrid` / `stream-ytmusic` are still unbuilt, and with only

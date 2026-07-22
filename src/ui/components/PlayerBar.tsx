@@ -7,7 +7,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { usePlayer } from "../viewmodels/useEngineState.js";
 import { useUi } from "../../app/store.js";
 import { useServices } from "../../app/providers.js";
-import { useIsLiked, useToggleLike } from "../viewmodels/useLibrary.js";
+import { useIsSaved, useToggleSaved, trackToSaved } from "../viewmodels/useLibrary.js";
 import { Artwork, formatTime } from "./common.js";
 import { cn } from "@/lib/utils";
 
@@ -156,15 +156,15 @@ function TransportButton({
 /** Save the current track to the library. */
 function LikeButton() {
   const { track } = usePlayer();
-  const { data: liked } = useIsLiked(track?.recordingId);
-  const toggle = useToggleLike();
+  const { data: liked } = useIsSaved(track?.recordingId);
+  const toggle = useToggleSaved();
   if (!track) return null;
   return (
     <button
       type="button"
       aria-label={liked ? "Remove from library" : "Save to library"}
       aria-pressed={liked ?? false}
-      onClick={() => toggle.mutate({ track, liked: liked ?? false })}
+      onClick={() => toggle.mutate({ item: trackToSaved(track), saved: liked ?? false })}
       className={cn("p-1.5 transition-colors", liked ? "text-primary" : "text-chrome-foreground hover:text-primary")}
     >
       {liked ? "♥" : "♡"}

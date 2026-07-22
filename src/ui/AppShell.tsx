@@ -1,9 +1,8 @@
 /**
  * The app shell (mockup panel 2): sidebar + routed main + persistent player bar.
- * Navigation is local state rather than a router — deliberate for this first
+ * Navigation is store state rather than a router — deliberate for this first
  * slice; a typed router (§7) lands when deep links/history actually matter.
  */
-import { useState } from "react";
 import { useUi } from "../app/store.js";
 import { Sidebar } from "./components/Sidebar.js";
 import { PlayerBar } from "./components/PlayerBar.js";
@@ -20,38 +19,39 @@ import { usePersistSession } from "./viewmodels/usePersistSession.js";
 
 export function AppShell() {
   const view = useUi((s) => s.view);
-  // A two-level drill-down (search → artist → album) rather than a router:
-  // going back from an album returns to the artist when we arrived via one.
-  const [albumId, setAlbumId] = useState<string | undefined>(undefined);
-  const [artist, setArtist] = useState<{ id: string; name: string } | undefined>(undefined);
+  const detail = useUi((s) => s.detail);
+  const openDetail = useUi((s) => s.openDetail);
+  const closeDetail = useUi((s) => s.closeDetail);
 
   // Durable session: hydrate the queue on boot, autosave it, record plays.
   usePersistSession();
+
+  // The drill-down stack is shared by every view that can reach a detail
+  // screen, so search → artist → album and library → artist → album are the
+  // same code path and Back unwinds either one the way it came.
+  const openAlbum = (id: string, name: string) => openDetail({ kind: "album", id, name });
+  const openArtist = (id: string, name: string) => openDetail({ kind: "artist", id, name });
+  const top = detail[detail.length - 1];
 
   return (
     <div className="grid h-full grid-cols-[13rem_1fr] grid-rows-[1fr_5rem]">
       <Sidebar />
       <main className="overflow-y-auto bg-background">
-        {view === "home" ? (
+        {top?.kind === "album" ? (
+          <AlbumScreen albumId={top.id} onBack={closeDetail} />
+        ) : top?.kind === "artist" ? (
+          <ArtistScreen
+            artistId={top.id}
+            artistName={top.name}
+            onBack={closeDetail}
+            onOpenAlbum={openAlbum}
+          />
+        ) : view === "home" ? (
           <HomeScreen />
         ) : view === "search" ? (
-          albumId ? (
-            <AlbumScreen albumId={albumId} onBack={() => setAlbumId(undefined)} />
-          ) : artist ? (
-            <ArtistScreen
-              artistId={artist.id}
-              artistName={artist.name}
-              onBack={() => setArtist(undefined)}
-              onOpenAlbum={(id) => setAlbumId(id)}
-            />
-          ) : (
-            <SearchScreen
-              onOpenAlbum={(id) => setAlbumId(id)}
-              onOpenArtist={(id, name) => setArtist({ id, name })}
-            />
-          )
+          <SearchScreen onOpenAlbum={openAlbum} onOpenArtist={openArtist} />
         ) : view === "library" ? (
-          <LibraryScreen />
+          <LibraryScreen onOpenAlbum={openAlbum} onOpenArtist={openArtist} />
         ) : view === "addons" ? (
           <AddonsScreen />
         ) : (

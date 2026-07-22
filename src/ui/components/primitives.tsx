@@ -71,6 +71,26 @@ export function Row({
   );
 }
 
+/**
+ * The clickable body of a row that also carries its own trailing actions.
+ *
+ * `Row` is itself a button, and a button may not nest one — so a row with a
+ * Remove control makes its *main area* the button instead. The negative margins
+ * pull the hit area back out to the row's full height, so it still behaves like
+ * one target rather than a link floating inside a box.
+ */
+export function RowBody({ children, onClick }: { children: ReactNode; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="-mx-4 -my-2.5 flex min-w-0 flex-1 items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-muted"
+    >
+      {children}
+    </button>
+  );
+}
+
 export function RowIndex({ children }: { children: ReactNode }) {
   return <span className="w-6 shrink-0 font-mono text-xs tabular-nums text-muted-foreground">{children}</span>;
 }

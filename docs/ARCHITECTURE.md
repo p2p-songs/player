@@ -1018,9 +1018,19 @@ things worth recording because they are architecture, not UI detail:
 - **The TanStack Query client lives in `src/app/providers.tsx`** — the metadata
   plane's policy, deferred out of `src/core` in P-3, now has its home. `/stream`
   still never passes through it (§5a).
-- *Not yet built, deliberately:* a router (nav is local state), and the theme
-  **contract/registry** — only the token layer exists. §7a says ship one theme
-  first; the swappable-surface seam isn't earned until a second theme is wanted.
+- *Not yet built, deliberately:* a router. Nav is a `detail: Detail[]` stack in
+  the UI store beside `view`, so `setView` can clear it atomically — one stack
+  serves search → artist → album and library → artist → album alike. Browser
+  Back still exits the app; that is what earns a router (§7), not the drill-down.
+
+**Library (2026-07-22).** The saved library holds **identity, not media** — a
+saved album is an id plus what a row needs to draw, never a track listing and
+never a stream, exactly as §6 requires of every durable record. That is what
+lets one save path cover all three kinds (song from the player bar, album and
+artist from their detail screens) and one collection, sorted by save time, back
+the All/Songs/Albums/Artists tabs. Opening a saved album re-reads its meta from
+the catalog addons rather than replaying anything stored, so the library never
+becomes a stale second copy of the catalog.
 
 **A-009 (2026-07-21) reconciled** — 3 medium: the shared provider deadline is now
 a hard bound rather than a cooperative abort; read-modify-write atomicity moved

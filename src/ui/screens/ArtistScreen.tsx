@@ -6,6 +6,7 @@
  * reuses the existing album screen with no special casing.
  */
 import { useArtistAlbums, isUnreachable } from "../viewmodels/useCatalog.js";
+import { useIsSaved, useToggleSaved } from "../viewmodels/useLibrary.js";
 import { Artwork } from "../components/common.js";
 import { Loading, Muted, PageTitle, Row, RowMain, RowTime, Rows, StateBlock } from "../components/primitives.js";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,8 @@ export function ArtistScreen({
   onOpenAlbum: (id: string, name: string) => void;
 }) {
   const albums = useArtistAlbums(artistId);
+  const { data: following } = useIsSaved(artistId);
+  const toggleSaved = useToggleSaved();
   const rows = albums.data ?? [];
 
   return (
@@ -31,10 +34,25 @@ export function ArtistScreen({
       </Button>
 
       <PageTitle className="mb-1">{artistName}</PageTitle>
-      <div className="mb-5">
+      <div className="mb-5 flex items-center gap-4">
         <Muted>
           {albums.isLoading ? "Loading discography…" : `${rows.length} ${rows.length === 1 ? "release" : "releases"}`}
         </Muted>
+        {/* An artist search result is only an id and a name, so that is all the
+            library entry can hold — the discography is re-read on open. */}
+        <Button
+          size="sm"
+          variant={following ? "default" : "outline"}
+          aria-pressed={following ?? false}
+          onClick={() =>
+            toggleSaved.mutate({
+              saved: following ?? false,
+              item: { id: artistId, kind: "artist", name: artistName },
+            })
+          }
+        >
+          {following ? "✓ Following" : "+ Follow"}
+        </Button>
       </div>
 
       {albums.isLoading ? (

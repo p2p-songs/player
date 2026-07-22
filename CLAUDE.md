@@ -261,6 +261,18 @@ The app is a React/Vite shell at `index.html` → `src/app/main.tsx`.
   ARCHITECTURE §7a: component theming, then data-only installable themes — the
   second was secure but delivered no character, because the real gap was the
   component layer, not the styling layer.
+- **Search is one box, debounced (2026-07-22).** No type tabs — people type
+  "justin bieber baby", an artist *and* a song, so making them pick a category
+  first asks a question they can't answer. `useUnifiedSearch` fans out to all
+  three types and sections the results (artists/albums capped, songs in full);
+  one type failing doesn't fail the search, only a clean sweep does.
+  **`useDebounced` is load-bearing, not polish.** Search had no debounce and got
+  away with it at one request per keystroke; three per keystroke turned an
+  18-character phrase into **54 requests**, and against MusicBrainz's 1 req/sec
+  limit the real search queued past the 15s provider deadline and reported
+  "couldn't reach any addon" while every addon was healthy. Aborting does not
+  help — the browser drops the socket but the addon's upstream queue keeps
+  draining, so the only fix is not making the request.
 - **Deliberately not built:** router (nav is search→artist→album local state),
   source-picker modal, Playlists tab, responsive/mobile layout.
 

@@ -15,6 +15,7 @@ import { useUi } from "../../app/store.js";
 import { useUnifiedSearch, isUnreachable, previewToTrack } from "../viewmodels/useCatalog.js";
 import { usePlayer } from "../viewmodels/useEngineState.js";
 import { useInstalledAddons } from "../viewmodels/useAddons.js";
+import { useDebounced } from "../viewmodels/useDebounced.js";
 import { Artwork } from "../components/common.js";
 import {
   Loading,
@@ -49,7 +50,13 @@ export function SearchScreen({
 
   const hasCatalogAddon = (addons ?? []).some((a) => a.online && a.resources.includes("catalog"));
   const hasStreamAddon = (addons ?? []).some((a) => a.online && a.resources.includes("stream"));
-  const search = useUnifiedSearch(query, hasCatalogAddon);
+
+  // The input stays instant; only the *query* waits. Without this every
+  // keystroke fired three searches, and a typed phrase buried the real one
+  // under its own backlog until it hit the provider deadline.
+  const settledQuery = useDebounced(query, 350);
+  const search = useUnifiedSearch(settledQuery, hasCatalogAddon);
+  const settling = query.trim() !== settledQuery.trim();
 
   const results = search.data;
   const total = results ? results.artists.length + results.albums.length + results.tracks.length : 0;
@@ -101,7 +108,7 @@ export function SearchScreen({
             </div>
           }
         />
-      ) : search.isLoading ? (
+      ) : settling || search.isLoading ? (
         <Loading label="Searching…" />
       ) : search.isError ? (
         <StateBlock

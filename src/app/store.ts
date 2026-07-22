@@ -32,6 +32,15 @@ interface UiState {
    * exactly where you were — nothing about which screen you were on changes.
    */
   nowPlayingOpen: boolean;
+  /**
+   * The playback problem the user dismissed, keyed by its text. It lives here
+   * rather than in `PlaybackAlert` because the alert renders in two places (the
+   * shell and the now-playing overlay) and component state would let a dismissal
+   * come back the moment you minimised. Keyed rather than boolean so the *next*
+   * failure still announces itself — see the component.
+   */
+  dismissedAlert: string | undefined;
+  setDismissedAlert: (key: string | undefined) => void;
   setView: (view: View) => void;
   openDetail: (detail: Detail) => void;
   closeDetail: () => void;
@@ -47,6 +56,8 @@ export const useUi = create<UiState>((set) => ({
   searchQuery: "",
   queueOpen: false,
   nowPlayingOpen: false,
+  dismissedAlert: undefined,
+  setDismissedAlert: (dismissedAlert) => set({ dismissedAlert }),
   setView: (view) => set({ view, detail: [] }),
   openDetail: (detail) => set((s) => ({ detail: [...s.detail, detail] })),
   closeDetail: () => set((s) => ({ detail: s.detail.slice(0, -1) })),

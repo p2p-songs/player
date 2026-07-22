@@ -109,6 +109,49 @@ export function RowTime({ children }: { children: ReactNode }) {
   return <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">{children}</span>;
 }
 
+/**
+ * A button on a **chrome** surface (the player bar, the now-playing view).
+ *
+ * RetroUI's `outline` variant is built for the cream canvas: it sets
+ * `bg-background` and no text colour, so on chrome it inherits
+ * `--chrome-foreground` and renders cream on cream — invisible, which is exactly
+ * what Minimize/Like/Album did. Chrome needs its own foreground/background
+ * pairing rather than a canvas button with patches on it.
+ */
+export function ChromeButton({
+  children,
+  onClick,
+  label,
+  pressed,
+  active = false,
+  className,
+}: {
+  children: ReactNode;
+  onClick?: () => void;
+  label?: string;
+  pressed?: boolean;
+  active?: boolean;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      aria-pressed={pressed}
+      className={cn(
+        "inline-flex items-center gap-2 border-2 px-4 py-2 text-sm font-medium transition-colors",
+        active
+          ? "border-accent bg-accent text-accent-foreground"
+          : "border-chrome-muted text-chrome-foreground hover:border-accent hover:bg-accent hover:text-accent-foreground",
+        className,
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
 /** Empty / loading / error blocks. */
 export function StateBlock({
   icon,

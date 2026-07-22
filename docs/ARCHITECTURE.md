@@ -839,6 +839,15 @@ otherwise scatters styling across every call site, and a thousand
 `border-2 border-black shadow-md` in screens is the same failure as a thousand
 hardcoded hex values — with nothing able to catch it.
 
+**Chrome is a second surface, not a darker canvas.** The sidebar, player bar and
+now-playing view sit on `--chrome`, and registry components assume the cream one:
+RetroUI's `outline` button sets `bg-background` and no text colour, so on chrome
+it inherits `--chrome-foreground` and paints cream on cream. That is a *silent*
+failure — it typechecks, builds, and renders an invisible control. Chrome-side
+controls therefore come from `ChromeButton`/`TransportButton`, which pair their
+own foreground and background, and a registry component dropped onto `bg-chrome`
+should be treated as a bug until its colours are checked.
+
 **Transport is its own vocabulary** (`ui/components/transport.tsx`), composed by
 both the player bar and the now-playing view so the two cannot drift. Two of its
 decisions are behavioural rather than visual and belong here:

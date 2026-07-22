@@ -28,8 +28,8 @@ import { useIsSaved, useToggleSaved, trackToSaved } from "../viewmodels/useLibra
 import { Artwork, formatTime } from "../components/common.js";
 import { Vinyl } from "../components/Vinyl.js";
 import { PlayButton, Scrubber, TransportButton } from "../components/transport.js";
-import { Row, RowMain, RowTime, Rows, StateBlock } from "../components/primitives.js";
-import { Button } from "@/components/ui/button";
+import { ChromeButton, Row, RowMain, RowTime, Rows, StateBlock } from "../components/primitives.js";
+import { PlaybackAlert } from "../components/PlaybackAlert.js";
 import {
   ChevronDownIcon,
   DiscAlbumIcon,
@@ -69,12 +69,13 @@ export function NowPlayingScreen() {
         >
           <div className="flex min-w-0 flex-col p-8">
             <div className="flex items-start justify-between gap-4">
-              <DialogPrimitive.Close asChild>
-                <Button size="sm" variant="outline" className="gap-1.5">
-                  <ChevronDownIcon className="size-4" />
-                  Minimize
-                </Button>
-              </DialogPrimitive.Close>
+              {/* Not `Dialog.Close asChild`: Slot would have to merge a ref
+                  into a plain function component for no gain — `close()` is the
+                  same thing the dialog would call. */}
+              <ChromeButton onClick={close} className="px-3 py-1.5 text-xs">
+                <ChevronDownIcon className="size-4" />
+                Minimize
+              </ChromeButton>
               {source ? (
                 <div className="border-2 border-accent px-3 py-1.5 font-head text-[11px] uppercase tracking-[0.14em] text-accent">
                   Streaming from: {source}
@@ -107,19 +108,16 @@ export function NowPlayingScreen() {
                 </div>
 
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <Button
-                    variant="outline"
-                    aria-pressed={liked ?? false}
+                  <ChromeButton
+                    pressed={liked ?? false}
+                    active={liked ?? false}
                     onClick={() => toggleSaved.mutate({ item: trackToSaved(track), saved: liked ?? false })}
-                    className="gap-2"
                   >
                     <HeartIcon className={cn("size-4", liked && "fill-current")} />
                     {liked ? "Liked" : "Like"}
-                  </Button>
+                  </ChromeButton>
                   {track.releaseId && track.album ? (
-                    <Button
-                      variant="outline"
-                      className="gap-2"
+                    <ChromeButton
                       // Pushes onto whatever stack the shell already has, so Back
                       // returns to the screen the overlay was opened from.
                       onClick={() => {
@@ -129,13 +127,15 @@ export function NowPlayingScreen() {
                     >
                       <DiscAlbumIcon className="size-4" />
                       Album
-                    </Button>
+                    </ChromeButton>
                   ) : null}
                 </div>
               </div>
             </div>
 
-            <div className="flex flex-col items-center gap-4">
+            <PlaybackAlert inline />
+
+            <div className="flex flex-col items-center gap-4 pt-4">
               <Scrubber
                 positionMs={positionMs}
                 durationMs={durationMs}

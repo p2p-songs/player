@@ -325,6 +325,21 @@ The app is a React/Vite shell at `index.html` → `src/app/main.tsx`.
   a UI starts lying. The source *readout* is real.
 - **`--player-bar-h`** is one token because three places must agree on the bar's
   height (shell grid row, queue drawer `bottom`, playback alert `bottom`).
+- **Chrome surfaces need `ChromeButton`, never RetroUI's `outline`/`ghost`.**
+  Those variants are built for the cream canvas: `outline` sets `bg-background`
+  and *no* text colour, so on chrome it inherits `--chrome-foreground` and
+  renders cream on cream. Minimize/Like/Album shipped invisible that way. The
+  same trap applies to any registry component dropped onto `bg-chrome`.
+- **`PlaybackAlert` is dismissible, keyed by the problem text, in the UI store.**
+  Keyed, because a boolean would silence every *later* failure too — the exact
+  silent-failure bug the component exists to fix; leaving the error state clears
+  the key. In the store, because it renders in two places (fixed above the bar,
+  inline inside the now-playing overlay — pinned, it landed on the overlay's own
+  transport), and component state resurrected a dismissed alert on minimise.
+- **The vinyl pauses via `animation-play-state`, not by dropping the class.**
+  Removing it resets `transform` to none, so the record snapped upright on pause
+  and jumped on resume. It spins on `isPlaying` only — a failed resolve leaves it
+  correctly still.
 - **Deliberately not built:** router (nav is a stack in the UI store — browser
   Back still exits the app), source-picker modal, Playlists tab,
   responsive/mobile layout.

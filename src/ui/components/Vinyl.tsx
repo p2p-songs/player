@@ -13,9 +13,13 @@
  * (handled globally in `globals.css`) — a permanently spinning element is a
  * genuine problem for vestibular sensitivity, and it also reads as "playing"
  * when nothing is.
+ *
+ * Pausing **suspends** the animation rather than removing it. Dropping the class
+ * resets `transform` to none, so the record snapped back upright on every pause
+ * and jumped again on resume; `animation-play-state` holds the angle instead,
+ * which is also what a real deck does.
  */
 import { proceduralBackground } from "./ProceduralArt.js";
-import { cn } from "@/lib/utils";
 
 export function Vinyl({
   seed,
@@ -30,8 +34,9 @@ export function Vinyl({
 }) {
   return (
     <div
-      className={cn("relative shrink-0 rounded-full", spinning && "animate-disc")}
+      className="relative shrink-0 rounded-full animate-disc"
       style={{
+        animationPlayState: spinning ? "running" : "paused",
         width: size,
         height: size,
         background:

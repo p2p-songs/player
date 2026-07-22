@@ -10,13 +10,48 @@ import { useServices } from "../../app/providers.js";
 import { AddonUnreachableError } from "../../core/addon/index.js";
 import type { TrackRef } from "../../core/queue/types.js";
 
-/** Cross-addon search, merged and deduped by the collection. */
+/** Cross-addon search for one content type, merged and deduped by the collection. */
 export function useSearch(type: ContentType, query: string, enabled: boolean) {
   const { collection } = useServices();
   return useQuery({
     queryKey: ["search", type, query],
     enabled: enabled && query.trim().length > 0,
     queryFn: ({ signal }) => collection.search(type, query.trim(), signal),
+  });
+}
+
+export interface UnifiedResults {
+  artists: MetaPreview[];
+  albums: MetaPreview[];
+  tracks: MetaPreview[];
+}
+
+const SEARCH_TYPES = ["artist", "album", "track"] as const;
+
+/**
+ * One search across every content type.
+ *
+ * People type "justin bieber baby" — an artist *and* a song — so asking them to
+ * pick a category first is asking them to answer a question they don't have an
+ * answer to. The protocol is typed per catalog, so the three searches still go
+ * out separately; the merge happens here, and the caller sections the results.
+ */
+export function useUnifiedSearch(query: string, enabled: boolean) {
+  const { collection } = useServices();
+  return useQuery<UnifiedResults>({
+    queryKey: ["search", query],
+    enabled: enabled && query.trim().length > 0,
+    queryFn: async ({ signal }) => {
+      const q = query.trim();
+      const settled = await Promise.allSettled(SEARCH_TYPES.map((t) => collection.search(t, q, signal)));
+      // One type failing is not a failed search — the others still have answers.
+      // Only a clean sweep is an outage, and it keeps the "couldn't reach any
+      // addon" state meaning what it says.
+      const first = settled[0]!;
+      if (settled.every((r) => r.status === "rejected")) throw (first as PromiseRejectedResult).reason;
+      const [artists, albums, tracks] = settled.map((r) => (r.status === "fulfilled" ? r.value : []));
+      return { artists: artists ?? [], albums: albums ?? [], tracks: tracks ?? [] };
+    },
   });
 }
 

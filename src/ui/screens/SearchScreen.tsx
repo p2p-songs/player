@@ -14,9 +14,16 @@ import { Artwork, Loading, StateBlock } from "../components/common.js";
 const TABS: { type: ContentType; label: string }[] = [
   { type: "track", label: "Songs" },
   { type: "album", label: "Albums" },
+  { type: "artist", label: "Artists" },
 ];
 
-export function SearchScreen({ onOpenAlbum }: { onOpenAlbum: (id: string, name: string) => void }) {
+export function SearchScreen({
+  onOpenAlbum,
+  onOpenArtist,
+}: {
+  onOpenAlbum: (id: string, name: string) => void;
+  onOpenArtist: (id: string, name: string) => void;
+}) {
   const query = useUi((s) => s.searchQuery);
   const setQuery = useUi((s) => s.setSearchQuery);
   const [type, setType] = useState<ContentType>("track");
@@ -38,7 +45,7 @@ export function SearchScreen({ onOpenAlbum }: { onOpenAlbum: (id: string, name: 
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search songs and albums"
+          placeholder="Search songs, albums and artists"
           aria-label="Search"
           autoFocus
         />
@@ -113,31 +120,28 @@ export function SearchScreen({ onOpenAlbum }: { onOpenAlbum: (id: string, name: 
         <StateBlock icon="⌕" title="No results found" message="Try different keywords." />
       ) : (
         <div className="rows" style={{ marginTop: 12 }}>
-          {(search.data ?? []).map((item) =>
-            type === "track" ? (
-              <button key={item.id} type="button" className="row" onClick={() => playTracks([previewToTrack(item)])}>
+          {(search.data ?? []).map((item) => {
+            // A track plays immediately; an album or artist opens a screen.
+            const open =
+              type === "track"
+                ? () => playTracks([previewToTrack(item)])
+                : type === "album"
+                  ? () => onOpenAlbum(item.id, item.name)
+                  : () => onOpenArtist(item.id, item.name);
+            return (
+              <button key={item.id} type="button" className="row" onClick={open}>
                 <Artwork src={item.poster} alt={item.name} size={38} />
                 <span className="row-main">
                   <span className="row-title">{item.name}</span>
-                  <span className="row-sub">{item.description ?? "Unknown artist"}</span>
+                  {/* Artist rows carry no secondary line — the name is the whole item. */}
+                  {type === "artist" ? null : <span className="row-sub">{item.description ?? "Unknown artist"}</span>}
                 </span>
                 <span className="row-time" aria-hidden="true">
-                  ▶
+                  {type === "track" ? "\u25B6" : "\u203A"}
                 </span>
               </button>
-            ) : (
-              <button key={item.id} type="button" className="row" onClick={() => onOpenAlbum(item.id, item.name)}>
-                <Artwork src={item.poster} alt={item.name} size={38} />
-                <span className="row-main">
-                  <span className="row-title">{item.name}</span>
-                  <span className="row-sub">{item.description ?? "Unknown artist"}</span>
-                </span>
-                <span className="row-time" aria-hidden="true">
-                  ›
-                </span>
-              </button>
-            ),
-          )}
+            );
+          })}
         </div>
       )}
     </div>

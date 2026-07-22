@@ -20,6 +20,24 @@ export function useSearch(type: ContentType, query: string, enabled: boolean) {
   });
 }
 
+/**
+ * An artist's discography.
+ *
+ * Artist search returns only an id and a name, so this is what stops an artist
+ * result being a dead end. It reads a *catalog* rather than the artist's `meta`
+ * because a discography is a list of items, which is what catalogs are for —
+ * and the results are ordinary album previews, so the album screen needs no
+ * special case for them.
+ */
+export function useArtistAlbums(artistId: string | undefined) {
+  const { collection } = useServices();
+  return useQuery({
+    queryKey: ["artist-albums", artistId],
+    enabled: artistId !== undefined,
+    queryFn: ({ signal }) => collection.catalogById("album", "byArtist", { artistId: artistId! }, signal),
+  });
+}
+
 /** Full detail for one item (album track listing, artist page, …). */
 export function useMeta(type: ContentType, id: string | undefined) {
   const { collection } = useServices();

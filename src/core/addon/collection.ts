@@ -115,7 +115,39 @@ export class AddonCollection {
    * (so the caller retries rather than showing an empty search as authoritative).
    */
   async search(type: ContentType, query: string, signal?: AbortSignal): Promise<MetaPreview[]> {
-    const providers = this.clients.filter((c) => this.searchCatalogsFor(c, type).length > 0);
+    return this.catalog(type, { search: query }, (client) => this.searchCatalogsFor(client, type), signal);
+  }
+
+  /**
+   * A specific catalog by id, with its own required extra — e.g. an artist's
+   * discography (`byArtist` + `artistId`). Same fan-out, isolation, and
+   * dedup rules as {@link search}; only the catalog selection differs.
+   */
+  async catalogById(
+    type: ContentType,
+    catalogId: string,
+    extra: Record<string, string>,
+    signal?: AbortSignal,
+  ): Promise<MetaPreview[]> {
+    return this.catalog(
+      type,
+      extra,
+      (client) =>
+        client.supports("catalog")
+          ? client.manifest.catalogs.filter((cat) => cat.type === type && cat.id === catalogId)
+          : [],
+      signal,
+    );
+  }
+
+  /** The shared fan-out both catalog entry points use. */
+  private async catalog(
+    type: ContentType,
+    extra: Record<string, string>,
+    catalogsFor: (client: AddonClient) => { id: string }[],
+    signal?: AbortSignal,
+  ): Promise<MetaPreview[]> {
+    const providers = this.clients.filter((c) => catalogsFor(c).length > 0);
     if (providers.length === 0) return [];
     const outer = signal ?? neverAbort();
 
@@ -123,8 +155,8 @@ export class AddonCollection {
       providers.map((addon) =>
         askBounded(async (sig) => {
           const metas: MetaPreview[] = [];
-          for (const cat of this.searchCatalogsFor(addon, type)) {
-            metas.push(...(await addon.getCatalog(type, cat.id, { search: query }, sig)));
+          for (const cat of catalogsFor(addon)) {
+            metas.push(...(await addon.getCatalog(type, cat.id, extra, sig)));
           }
           return metas;
         }, outer, this.providerTimeoutMs),

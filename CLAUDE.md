@@ -231,9 +231,19 @@ The app is a React/Vite shell at `index.html` → `src/app/main.tsx`.
 - **Failure is visible:** `PlaybackAlert` surfaces the resolver's actual reason
   ("no source has this track" vs "no stream addon installed" vs "addons
   unreachable"). Silent failure was the worst bug found in manual testing.
-- **Deliberately not built:** router (nav is local state), theme *contract/
-  registry* (only the token layer — one theme, so the seam isn't earned yet),
-  source-picker modal, Artists/Playlists tabs.
+- **Artists search + artist screen (2026-07-22).** A third search tab, and
+  `ArtistScreen` showing the discography — because an artist result is only an
+  id and a name, so without it finding an artist was a dead end. The list comes
+  from a *catalog* (`byArtist` + `artistId`), not the artist's `meta`: a
+  discography is a list of items, and the rows are ordinary album previews, so
+  opening one reuses `AlbumScreen` unchanged. `AddonCollection.catalogById`
+  generalises the search fan-out (same isolation/dedup/deadline rules) and
+  selects the catalog **by id** — reusing search's "any catalog with a `search`
+  extra" would have fired an unrelated argument-less search, since `album` now
+  has two catalogs.
+- **Deliberately not built:** router (nav is search→artist→album local state),
+  theme *contract/registry* (only the token layer — one theme, so the seam isn't
+  earned yet), source-picker modal, Playlists tab.
 
 Next: **P-6** (PWA) or **P-7** (accounts/sync), or fill the addon gap —
 `stream-debrid` / `stream-ytmusic` are still unbuilt, and with only

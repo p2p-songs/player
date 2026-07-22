@@ -255,3 +255,91 @@ describe("AddonCollection.search", () => {
     await expect(collection.search("track", "song")).resolves.toEqual([]);
   });
 });
+
+// --- a specific catalog by id (artist discography) ---
+
+const ALBUM = "mbid:release:44444444-4444-4444-4444-444444444444";
+const ALBUM2 = "mbid:release:55555555-5555-5555-5555-555555555555";
+const ARTIST_ID = "mbid:artist:66666666-6666-6666-6666-666666666666";
+
+const albumPreview = (id: string, name: string) => ({ type: "album", id, name });
+
+const discographyManifest = (id: string) =>
+  manifest({
+    id,
+    resources: ["catalog"],
+    types: ["album"],
+    idPrefixes: ["mbid:release:"],
+    catalogs: [
+      { type: "album", id: "search", name: "Albums", extra: [{ name: "search", isRequired: true }] },
+      { type: "album", id: "byArtist", name: "Discography", extra: [{ name: "artistId", isRequired: true }] },
+    ],
+  });
+
+describe("AddonCollection.catalogById", () => {
+  it("asks only the named catalog, not every catalog of that type", async () => {
+    // The distinction that matters: `album` has both a search catalog and a
+    // discography one. Reusing search's "any catalog with a `search` extra"
+    // selection here would fire an unrelated, argument-less search.
+    const http = new FakeHttp();
+    const collection = new AddonCollection({ httpGet: http.get });
+    const asked: string[] = [];
+    http.on("https://d1.example/manifest.json", () => ({ status: 200, body: discographyManifest("d1") }));
+    http.when(
+      (u) => u.startsWith("https://d1.example/catalog/album/"),
+      (url) => {
+        asked.push(url.replace("https://d1.example/catalog/album/", "").split("/")[0]!);
+        return { status: 200, body: { metas: [albumPreview(ALBUM, "First")] } };
+      },
+    );
+    await collection.install("https://d1.example/manifest.json");
+
+    const metas = await collection.catalogById("album", "byArtist", { artistId: ARTIST_ID });
+    expect(metas.map((m) => m.id)).toEqual([ALBUM]);
+    expect(asked).toEqual(["byArtist"]);
+  });
+
+  it("merges and dedupes across addons, like search does", async () => {
+    const http = new FakeHttp();
+    const collection = new AddonCollection({ httpGet: http.get });
+    for (const [host, id, metas] of [
+      ["https://d1.example", "d1", [albumPreview(ALBUM, "First (d1)")]],
+      ["https://d2.example", "d2", [albumPreview(ALBUM, "First (d2)"), albumPreview(ALBUM2, "Second")]],
+    ] as const) {
+      http.on(`${host}/manifest.json`, () => ({ status: 200, body: discographyManifest(id) }));
+      http.when((u) => u.startsWith(`${host}/catalog/album/`), () => ({ status: 200, body: { metas } }));
+      await collection.install(`${host}/manifest.json`);
+    }
+
+    const metas = await collection.catalogById("album", "byArtist", { artistId: ARTIST_ID });
+    expect(metas.map((m) => m.id)).toEqual([ALBUM, ALBUM2]);
+    expect(metas.find((m) => m.id === ALBUM)?.name).toBe("First (d1)"); // install order wins
+  });
+
+  it("returns empty when no installed addon advertises that catalog", async () => {
+    const http = new FakeHttp();
+    const collection = new AddonCollection({ httpGet: http.get });
+    await catalogProvider(http, collection, "https://c1.example", "c1", () => ({ status: 200, body: { metas: [] } }));
+
+    // c1 has only a track/search catalog — asking for a discography must not
+    // fall back to searching it.
+    await expect(collection.catalogById("album", "byArtist", { artistId: ARTIST_ID })).resolves.toEqual([]);
+  });
+
+  it("isolates a down provider", async () => {
+    const http = new FakeHttp();
+    const collection = new AddonCollection({ httpGet: http.get });
+    for (const [host, id, res] of [
+      ["https://d1.example", "d1", { status: 503, body: {} }],
+      ["https://d2.example", "d2", { status: 200, body: { metas: [albumPreview(ALBUM, "First")] } }],
+    ] as const) {
+      http.on(`${host}/manifest.json`, () => ({ status: 200, body: discographyManifest(id) }));
+      http.when((u) => u.startsWith(`${host}/catalog/album/`), () => res);
+      await collection.install(`${host}/manifest.json`);
+    }
+
+    await expect(collection.catalogById("album", "byArtist", { artistId: ARTIST_ID })).resolves.toEqual([
+      expect.objectContaining({ id: ALBUM }),
+    ]);
+  });
+});

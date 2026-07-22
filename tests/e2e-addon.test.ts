@@ -58,6 +58,9 @@ const fakeMb: MusicBrainzClient = {
   async searchArtists(): Promise<MbArtist[]> {
     return [];
   },
+  async browseArtistReleases(): Promise<MbRelease[]> {
+    return [];
+  },
   async searchReleases(): Promise<MbRelease[]> {
     return [];
   },

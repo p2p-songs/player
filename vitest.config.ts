@@ -12,5 +12,9 @@ export default defineConfig({
   resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
   test: {
     include: ["src/**/*.test.ts", "tests/**/*.test.ts"],
+    // Vitest stubs CSS imports to an empty string by default — including
+    // `?raw` ones. `design-system.test.ts` reads `globals.css` as text, and a
+    // silently empty read would make it pass while checking nothing.
+    css: true,
   },
 });

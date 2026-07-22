@@ -271,6 +271,18 @@ The app is a React/Vite shell at `index.html` → `src/app/main.tsx`.
   scattered across screens is the same failure as hardcoded hex, and nothing can
   catch it. Local edits inside `src/components/ui/` are clobbered by
   `shadcn add --overwrite`; prefer changing tokens.
+  **`globals.css`'s `@custom-variant` block is required, not decorative.** The
+  registry's components are written against shorthand state variants
+  (`data-active:`, `data-horizontal:`, `data-open:`) while Radix emits
+  `data-state="active"`, `data-orientation="horizontal"`. Without the bridge
+  Tailwind compiles `data-active:` to the literal `[data-active]`, which matches
+  nothing — **no error, every state style silently inert.** That shipped: Tabs
+  never became a column and never marked the selected tab, so the Library tab
+  bar stretched to full height and grew with the list beside it.
+  `src/ui/design-system.test.ts` now fails on any shorthand variant the CSS
+  doesn't declare (and any declaration nothing uses); it needs `css: true` in
+  `vitest.config.ts`, because Vitest otherwise stubs the `?raw` CSS read to an
+  empty string and the test passes while checking nothing.
   `ProceduralArt.tsx` (deterministic per release id, pure CSS over tokens) is the
   one visual piece no registry provides. Superseded, with reasoning, in
   ARCHITECTURE §7a: component theming, then data-only installable themes — the

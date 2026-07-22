@@ -15,6 +15,30 @@
  */
 @import "tailwindcss";
 
+/**
+ * State variants for the Radix-backed components in `src/components/ui/`.
+ *
+ * **These are required, not decorative.** Those components are written against
+ * shorthand variants — `data-active:`, `data-horizontal:`, `data-open:` — while
+ * Radix emits `data-state="active"`, `data-orientation="horizontal"`,
+ * `data-state="open"`. Without these declarations Tailwind happily compiles
+ * `data-active:` to the *literal* attribute selector `[data-active]`, which
+ * matches nothing: no error, no warning, just every state style silently
+ * inert. Tabs was the visible casualty — the list never became a column and
+ * never got its height, so it stretched to fill the row and grew with the
+ * content beside it, and no tab ever looked selected.
+ *
+ * Anything Radix emits as a bare attribute (`data-disabled`, `data-placeholder`)
+ * needs no declaration — Tailwind's built-in shorthand already matches it.
+ */
+@custom-variant data-active (&[data-state="active"]);
+@custom-variant data-open (&[data-state="open"]);
+@custom-variant data-closed (&[data-state="closed"]);
+@custom-variant data-checked (&[data-state="checked"]);
+@custom-variant data-unchecked (&[data-state="unchecked"]);
+@custom-variant data-horizontal (&[data-orientation="horizontal"]);
+@custom-variant data-vertical (&[data-orientation="vertical"]);
+
 @theme inline {
   --font-head: var(--font-head);
   --font-sans: var(--font-sans);

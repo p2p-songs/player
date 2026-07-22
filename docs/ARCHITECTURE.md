@@ -818,6 +818,20 @@ comes from — focus traps, roving tabindex, dismissal, ARIA wiring.
 *hard offset of it* — `4px 4px 0 var(--border)`, never a blur. That one fact is
 most of why the design reads as printed rather than rendered.
 
+**`globals.css`'s `@custom-variant` block is required, not decorative.** The
+registry's components are written against shorthand state variants —
+`data-active:`, `data-horizontal:`, `data-open:` — while Radix emits
+`data-state="active"`, `data-orientation="horizontal"`, `data-state="open"`.
+Bridging the two is the stylesheet's job, and when the bridge is absent there is
+**no error**: Tailwind compiles `data-active:` to the literal `[data-active]`
+selector, which matches nothing, and every state style across tabs, select,
+switch, slider, separator, dialog, sheet and tooltip goes silently inert. It
+shipped that way once — Tabs never became a column and never marked the selected
+tab, so the library's tab bar stretched to the full height of the list beside it.
+`src/ui/design-system.test.ts` now reads both files and requires them to agree in
+both directions: no undeclared shorthand, no unused declaration, and no
+declaration that resolves to the attribute it was supposed to translate.
+
 **The rule that keeps it coherent: screens compose and lay out; they do not
 carry visual utility classes.** Every border, shadow, colour and type decision
 lives in `globals.css`, `components/ui/*`, or `primitives.tsx`. Tailwind

@@ -27,7 +27,7 @@ export function AddonsScreen() {
         <div className="stack">
           <div>
             <strong>Install an addon</strong>
-            <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>
+            <div className="muted text-md" style={{ marginTop: 2 }}>
               Paste a manifest URL. The player ships with no sources of its own — everything comes from addons you add.
             </div>
           </div>
@@ -81,7 +81,7 @@ export function AddonsScreen() {
                 <span className="row-sub">{addon.displayUrl}</span>
                 <span className="inline" style={{ marginTop: 6, gap: 6 }}>
                   {addon.resources.map((r) => (
-                    <span key={r} className="chip">
+                    <span key={r} className="chip chip-alt">
                       {r}
                     </span>
                   ))}

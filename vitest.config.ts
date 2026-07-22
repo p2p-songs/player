@@ -10,5 +10,9 @@ export default defineConfig({
   root: ".",
   test: {
     include: ["src/**/*.test.ts", "tests/**/*.test.ts"],
+    // Vitest replaces CSS imports with empty strings unless asked not to. The
+    // theme test asserts *about* the stylesheets (that no themeable value is
+    // hardcoded), reading them with `?raw` — which needs this on.
+    css: true,
   },
 });

@@ -595,9 +595,12 @@ requirement, not a nicety:
   sinks, so it should never fire, and it exists so an unexpected dependency sink
   is loud rather than a white screen. It tightens to a hard throw after a
   real-browser verification pass; the strong, tested guarantee is `script-src`.
-- **No remote theme or plugin code, ever.** Themes (§7a) are first-party,
-  bundled, reviewed code — never fetched/eval'd from a URL at runtime. (This is
-  now a hard invariant on the theming feature, §7a/§11.)
+- **No remote theme or plugin code, ever.** Never fetched or `eval`'d from a
+  URL at runtime — and CSS counts as code for this purpose, because attribute
+  selectors plus `background-image` exfiltrate and restyling can hide the
+  redaction the credential story depends on. Note this constrains *code*, not
+  distribution: an **installed theme is permitted** precisely because it is a
+  validated token record and carries neither (§7a/§7b, §11).
 - **Dependency + telemetry discipline:** minimize third-party runtime deps in
   the app origin; no analytics/telemetry that could capture URLs or state.
 - **Redacted error boundaries:** crash/error paths must not serialize
@@ -797,47 +800,94 @@ behavior and the UI only renders it, then the UI is *itself* swappable.
 "Retro", "minimal", "modern" become selectable themes, switchable at runtime,
 addable without touching the engine.
 
-There are two tiers of "theme", and real themes use a mix of both:
+**A theme is data, never code.** This is the decision the whole design turns
+on, and it is a security constraint before it is an aesthetic one. The player
+holds configured addon URLs carrying debrid keys, and `script-src 'self'` (§6a)
+exists to stop injected code reading them. A theme that could ship JS would walk
+straight through that; a theme that could ship *CSS* is barely better, because
+CSS is not inert — attribute selectors plus `background-image` exfiltrate field
+contents, and restyling can hide the very redaction the credential story depends
+on. So a theme is a flat record of **token name → value**, and nothing else.
 
-**Tier 1 — token themes (skinning).** A theme is a set of **design tokens** —
-palette, typography, spacing, radii, shadows, motion — exposed as CSS custom
-properties (`--color-bg`, `--font-display`, `--radius`, `--motion-scale`, …).
-Components read tokens, never hardcoded values, so a token swap restyles the
-whole app at runtime with zero layout change. This covers variants that share
-structure (e.g. "modern light" vs "modern dark" vs "high-contrast").
+> An earlier revision of this section proposed a second tier in which a theme
+> supplied its own React components (a spinning-vinyl now-playing, a list-first
+> minimal). That is **superseded**. Surveying six full theme designs
+> (Bauhaus, neon, Y2K, retro-lounge, brutalist, zine) showed the information
+> architecture identical in all of them — sidebar, player bar, album table,
+> the same six essential states. What separated them was type, geometry, border
+> weight, elevation and colour. Structural theming would have bought little and
+> cost the "themes are data" property, which is what makes them installable at
+> all.
 
-**Tier 2 — component themes (reskinning the structure).** Some themes are
-*structurally* different, not just recolored: the retro theme has a spinning
-vinyl and A/B-side framing; a minimal theme is a tight list with no artwork
-chrome. That's not a token swap — the theme supplies its **own components**.
-To make that a clean drop-in we separate behavior from presentation:
+**The token contract** (`src/ui/theme/contract.ts`) is the whole of what a
+theme may change, and the token names *are* the CSS custom property names — so
+one file is the source of truth for what a theme may set, what the stylesheet
+may read, and what validation accepts once themes are installed. It is
+deliberately wider than colour: colour alone makes every theme the same app
+tinted. It carries a display/body/mono type triple and a size scale, letter
+spacing and label casing, radii (including pill and round separately, so a
+square theme can flatten chips while keeping a circular transport button),
+border widths, shadow *and* glow, focus ring, and the art-placeholder fill.
 
-- **Headless view-model hooks** (`src/ui/viewmodels/`): per surface —
-  `useNowPlaying()`, `useQueue()`, `useBrowse()`, `useSearch()`,
-  `useLibrary()`, `useLyrics()`, … — pure adapters over the engine that
-  return data + bound commands (`{ track, isPlaying, positionMs, toggle,
-  next, prev, seek, … }`). Theme-agnostic; every theme consumes these.
-- **A typed theme contract** (`src/ui/theme-contract.ts`): the set of
-  *surfaces* a theme may implement (`NowPlaying`, `Queue`, `MiniPlayer`,
-  `Browse`, `Search`, `Library`, `AddonManager`, `Lyrics`) and the props each
-  receives. Surfaces are marked required vs optional, so a spartan theme can
-  omit e.g. `Lyrics` and the app degrades gracefully.
-- **A theme = a folder/module** implementing that contract (its components +
-  its token set). A **theme registry + `ThemeProvider`** picks the active one,
-  supplies its tokens as CSS vars, and renders its surfaces. The selected
-  theme is persisted like any other setting (Zustand → Dexie).
+**Applying a theme** (`src/ui/theme/index.ts`) sets each property individually
+with `setProperty` — never by building a stylesheet string. `setProperty`
+parses against the property's grammar and drops anything malformed, so a value
+carrying `}` cannot close its declaration and open a rule of its own. Schema
+validation will be the first gate for installed themes; this is the second.
+Application iterates the *contract*, not the theme's own keys, so a theme can
+never set a property outside it however it was constructed.
 
 ```
 src/ui/
-  viewmodels/        # headless hooks over the engine — theme-agnostic
-  theme-contract.ts  # typed surface interface every theme is checked against
-  primitives/        # token-driven shared atoms (button, slider, scrubber) themes may reuse
-  themes/
-    retro/           # own components (spinning vinyl…) + tokens
-    minimal/         # own components (list-first…) + tokens
-    modern/          # …
-  ThemeProvider.tsx  # registry + runtime switch + token injection
+  viewmodels/          # headless hooks over the engine — theme-agnostic
+  theme/
+    contract.ts        # TOKEN_NAMES + ThemeTokens/Theme types — the whole vocabulary
+    index.ts           # registry, getTheme (falls back), applyTheme
+    themes/            # bundled themes: espresso (default), bauhaus, cyberpunk
+    theme.test.ts      # contract/CSS agreement, incl. "no hardcoded themeable value"
+  tokens.css           # default values for first paint + base element styles
+  styles.css           # component rules — read tokens only
 ```
+
+**The failure mode worth guarding** is a literal colour, radius or font size
+left in a component rule: it produces one widget that keeps its old look when
+the theme changes, which reads as a rendering bug and is otherwise found by eye,
+one screen at a time. `theme.test.ts` asserts the stylesheet hardcodes none, and
+that the contract, `tokens.css` and the rules that read them stay in agreement
+— including that no token is declared which nothing renders, since a token with
+no consumer is one a theme author can tune with no feedback.
+
+**Installable themes** are the intended direction (§7b), and everything above is
+shaped for it: a bundled theme and an installed one are the same record, so
+install is fetch + validate + store rather than a second mechanism.
+
+### 7b. Installable themes — designed, not yet built
+
+Themes install the way addons do: paste a URL, fetch, validate, keep. The
+differences from an addon are all simplifications — a theme is not a running
+service, so it is fetched **once** and the validated document is stored, which
+means no network at launch, no per-launch request to the author's host, and it
+works offline. A theme URL is also **not** secret-bearing, so unlike a
+configured addon URL it needs no redaction and may sync freely.
+
+Every value is typed, not free text: colours parse as colours, lengths carry a
+unit allowlist, enums are enums, and unknown keys are rejected rather than
+ignored. A theme that fails validation is not partially applied.
+
+Three asset kinds are wanted for real fidelity, each with a constraint that
+keeps "data, never code" true:
+
+- **Fonts** — size-capped base64 in the document, decoded to an `ArrayBuffer`
+  and registered via `new FontFace(name, buffer)`. No CSS string is built from
+  theme input, so there is nothing to inject into.
+- **Icons** — inline SVG parsed against a strict allowlist (geometry elements
+  and attributes only; `script`, `foreignObject`, `style`, `href` and all event
+  handlers dropped) and rebuilt as DOM nodes, never `innerHTML`.
+- **Textures** — `data:` URIs only, size-capped. Not `https:` URLs, which would
+  hand the theme's author the user's IP on every launch.
+
+The default theme is always reachable so a bad or removed theme can be recovered
+from — `getTheme` already falls back rather than leaving the app unstyled.
 
 Because every theme is wired to the same headless hooks, dropping in a new
 one is: add a folder, implement the required surfaces (reuse `primitives/`

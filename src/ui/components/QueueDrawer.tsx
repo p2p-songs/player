@@ -23,7 +23,7 @@ export function QueueDrawer() {
         {upNext.length === 0 ? (
           <StateBlock icon="♪" title="Nothing up next" message="Play something to build a queue." />
         ) : (
-          <div className="rows" style={{ border: 0, borderRadius: 0 }}>
+          <div className="rows rows-flush">
             {upNext.map((item, i) => (
               <button key={item.id} type="button" className="row" onClick={() => selectItem(item.id)}>
                 <span className="row-index">{i + 1}</span>

@@ -32,7 +32,7 @@ export function HomeScreen() {
         <div className="card">
           <div className="stack">
             <strong>Welcome to PHONO</strong>
-            <div className="muted" style={{ fontSize: 14 }}>
+            <div className="muted text-md">
               This player has no music of its own — it plays whatever your addons provide. Add one to get started:
               install a catalog addon to search, and a stream addon to play.
             </div>

@@ -17,6 +17,7 @@ import { LibraryScreen } from "./screens/LibraryScreen.js";
 import { AddonsScreen } from "./screens/AddonsScreen.js";
 import { SettingsScreen } from "./screens/SettingsScreen.js";
 import { usePersistSession } from "./viewmodels/usePersistSession.js";
+import { useThemeEffect } from "./viewmodels/useTheme.js";
 
 export function AppShell() {
   const view = useUi((s) => s.view);
@@ -27,6 +28,8 @@ export function AppShell() {
 
   // Durable session: hydrate the queue on boot, autosave it, record plays.
   usePersistSession();
+  // Apply the saved theme, and keep the document in sync with every change.
+  useThemeEffect();
 
   return (
     <div className="shell">

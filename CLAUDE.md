@@ -241,9 +241,23 @@ The app is a React/Vite shell at `index.html` → `src/app/main.tsx`.
   selects the catalog **by id** — reusing search's "any catalog with a `search`
   extra" would have fired an unrelated argument-less search, since `album` now
   has two catalogs.
+- **Theming (2026-07-22) — `src/ui/theme/`.** A theme is a flat record of
+  **token name → value**, applied with `setProperty` per token. That is a
+  security constraint, not a style choice: the origin holds debrid keys, and CSS
+  counts as code (attribute selectors exfiltrate; restyling can hide the §6a
+  redaction). `contract.ts` holds `TOKEN_NAMES` — the names *are* the custom
+  property names, so one file governs what a theme may set, what the stylesheet
+  may read, and what validation will accept. Three bundled themes; `cyberpunk`
+  earns its place as the **first dark content canvas**, which is what surfaces
+  any rule that quietly assumed a light surface. **Don't regress:** no literal
+  colour/radius/font-size in `styles.css`, and no token nothing renders — both
+  are asserted in `theme/theme.test.ts`, because the failure is one widget that
+  keeps its old look and is otherwise found by eye. Structural/component
+  theming is **superseded** (ARCHITECTURE §7a): six full theme designs shared
+  one information architecture, so tokens carry it.
 - **Deliberately not built:** router (nav is search→artist→album local state),
-  theme *contract/registry* (only the token layer — one theme, so the seam isn't
-  earned yet), source-picker modal, Playlists tab.
+  installable themes (§7b — designed, bundled-only for now), source-picker
+  modal, Playlists tab.
 
 Next: **P-6** (PWA) or **P-7** (accounts/sync), or fill the addon gap —
 `stream-debrid` / `stream-ytmusic` are still unbuilt, and with only

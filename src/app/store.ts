@@ -26,11 +26,19 @@ interface UiState {
   detail: Detail[];
   searchQuery: string;
   queueOpen: boolean;
+  /**
+   * The full now-playing view. A *mode* over the whole shell rather than a
+   * `View`, because it covers the sidebar and the bar too and returns you to
+   * exactly where you were — nothing about which screen you were on changes.
+   */
+  nowPlayingOpen: boolean;
   setView: (view: View) => void;
   openDetail: (detail: Detail) => void;
   closeDetail: () => void;
   setSearchQuery: (q: string) => void;
   toggleQueue: () => void;
+  openNowPlaying: () => void;
+  closeNowPlaying: () => void;
 }
 
 export const useUi = create<UiState>((set) => ({
@@ -38,9 +46,12 @@ export const useUi = create<UiState>((set) => ({
   detail: [],
   searchQuery: "",
   queueOpen: false,
+  nowPlayingOpen: false,
   setView: (view) => set({ view, detail: [] }),
   openDetail: (detail) => set((s) => ({ detail: [...s.detail, detail] })),
   closeDetail: () => set((s) => ({ detail: s.detail.slice(0, -1) })),
   setSearchQuery: (searchQuery) => set({ searchQuery }),
   toggleQueue: () => set((s) => ({ queueOpen: !s.queueOpen })),
+  openNowPlaying: () => set({ nowPlayingOpen: true }),
+  closeNowPlaying: () => set({ nowPlayingOpen: false }),
 }));

@@ -300,6 +300,31 @@ The app is a React/Vite shell at `index.html` → `src/app/main.tsx`.
   "couldn't reach any addon" while every addon was healthy. Aborting does not
   help — the browser drops the socket but the addon's upstream queue keeps
   draining, so the only fix is not making the request.
+- **Transport (2026-07-22) — `ui/components/transport.tsx`** is the vocabulary
+  the player bar and the now-playing view both compose from.
+  - **Icons are drawn, not typed.** They were emoji; `🔁` rendered in the
+    platform's *colour* emoji font — a blue badge in a burnt-orange design.
+    Lucide paths take `currentColor`.
+  - **`Scrubber` commits on release.** Bound straight to `seek`, a drag issues a
+    seek per pointer move — dozens of `currentTime` writes, each re-buffering,
+    so the audio stutters through the drag and lands late. Radix's
+    `onValueChange` (live) / `onValueCommit` (release) split is the fix; the
+    dragged position is shown locally until commit. Dropping the local value on
+    commit is safe *only because* `Engine.seek` dispatches its `POSITION`
+    synchronously — otherwise the handle snaps back for a frame.
+  - **`useVolume` persists** (`volume`/`muted` settings), also on commit, not on
+    change: a write per pointer move would queue dozens of IndexedDB
+    transactions for a number nobody has finished choosing.
+- **Now playing (`screens/NowPlayingScreen.tsx`)** is an overlay over the whole
+  shell, not a `View` — it covers the sidebar and bar and returns you to the
+  screen you were on. Built on the **Radix dialog primitive** (not
+  `components/ui/dialog`, whose content is a centred card): "covers everything"
+  has to hold for the keyboard too — focus trap, Escape, focus restore, the rest
+  inert. It deliberately omits the mockup's source *picker*, add-to-playlist and
+  autoplay-radio: those features don't exist, and drawing their controls is how
+  a UI starts lying. The source *readout* is real.
+- **`--player-bar-h`** is one token because three places must agree on the bar's
+  height (shell grid row, queue drawer `bottom`, playback alert `bottom`).
 - **Deliberately not built:** router (nav is a stack in the UI store — browser
   Back still exits the app), source-picker modal, Playlists tab,
   responsive/mobile layout.

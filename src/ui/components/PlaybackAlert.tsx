@@ -17,7 +17,7 @@ export function PlaybackAlert() {
   return (
     <div
       role="alert"
-      className="fixed inset-x-0 bottom-20 z-30 flex items-center gap-3 border-y-2 border-border border-b-primary bg-accent px-5 py-2.5 text-sm text-accent-foreground"
+      className="fixed inset-x-0 bottom-(--player-bar-h) z-40 flex items-center gap-3 border-y-2 border-border border-b-primary bg-accent px-5 py-2.5 text-sm text-accent-foreground"
     >
       <span aria-hidden="true">⚠</span>
       <span className="min-w-0 flex-1">

@@ -839,8 +839,33 @@ otherwise scatters styling across every call site, and a thousand
 `border-2 border-black shadow-md` in screens is the same failure as a thousand
 hardcoded hex values — with nothing able to catch it.
 
-**Generated cover art** (`ProceduralArt.tsx`) is the one visual piece no registry
-provides. Most releases outside the mainstream have no artwork, and a grid of
+**Transport is its own vocabulary** (`ui/components/transport.tsx`), composed by
+both the player bar and the now-playing view so the two cannot drift. Two of its
+decisions are behavioural rather than visual and belong here:
+
+- **The scrubber commits on release.** A slider bound directly to `seek` issues a
+  seek per pointer move — dozens of `currentTime` writes, each re-buffering the
+  element — so audio stutters through the drag and lands late. Radix splits
+  `onValueChange` (live) from `onValueCommit` (release); the dragged position is
+  held locally and handed over on commit. That handover is seamless *only
+  because* `Engine.seek` dispatches its `POSITION` synchronously (§8a) — a
+  contract this UI now depends on.
+- **Volume is durable** (§6 settings) and likewise written on commit, not on
+  change. Restoring the queue and position but not the volume is an
+  inconsistency the user feels immediately.
+
+**The now-playing view is a modal overlay, not a `View`** — it covers the shell
+and returns you to the screen you were on, so it is built on the Radix dialog
+primitive: covering everything has to hold for the keyboard (focus trap, Escape,
+focus restore, rest-of-app inert), and a positioned `div` gets the pixels right
+while letting Tab walk into a screen nobody can see. It renders the source
+*readout* (real: the addon the scheduler resolved from) but not the mockup's
+source **picker**, add-to-playlist or autoplay-radio — those are §5's deferred
+picker, an unbuilt playlist UI, and an unused `RadioSeed` respectively, and
+drawing controls for absent features is how a UI starts lying about itself.
+
+**Generated cover art** (`ProceduralArt.tsx`, and the record on the now-playing
+view, `Vinyl.tsx`) is the one visual piece no registry provides. Most releases outside the mainstream have no artwork, and a grid of
 identical grey initials is the single biggest reason a library looks unfinished.
 Compositions are deterministic from the release id (art that reshuffles reads as
 a glitch) and are pure CSS referencing tokens, so they restyle for free.

@@ -77,6 +77,31 @@
   --color-chrome: var(--chrome);
   --color-chrome-foreground: var(--chrome-foreground);
   --color-chrome-muted: var(--chrome-muted);
+  --color-chrome-track: var(--chrome-track);
+  /* Ink-on-ink is invisible, so chrome casts its own darker shadow. Same hard
+     offset, so the relationship above still holds on the dark surfaces. */
+  --shadow-chrome: 3px 3px 0 0 var(--chrome-shadow);
+
+  --animate-vu: vu 1s ease-in-out infinite;
+  --animate-disc: disc 6s linear infinite;
+}
+
+/* The playing indicator, and the record turning. Both are decoration and both
+   stop under `prefers-reduced-motion` (see the bottom of this file). */
+@keyframes vu {
+  0%,
+  100% {
+    transform: scaleY(0.3);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+@keyframes disc {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 :root {
@@ -116,6 +141,15 @@
   --chrome: #2a211a;
   --chrome-foreground: #f4eee2;
   --chrome-muted: #a2947f;
+  /* Unfilled slider track on chrome: lighter than the surface, so the primary
+     fill reads as progress rather than as the whole bar. */
+  --chrome-track: #4a3b2d;
+  --chrome-shadow: #16100b;
+
+  /* The player bar's height. The shell reserves it, and the queue drawer and
+     playback alert stop above it — three places that must agree, so it is one
+     value rather than three literals waiting to drift apart. */
+  --player-bar-h: 5.5rem;
 }
 
 @layer base {

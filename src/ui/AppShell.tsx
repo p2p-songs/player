@@ -15,6 +15,7 @@ import { ArtistScreen } from "./screens/ArtistScreen.js";
 import { LibraryScreen } from "./screens/LibraryScreen.js";
 import { AddonsScreen } from "./screens/AddonsScreen.js";
 import { SettingsScreen } from "./screens/SettingsScreen.js";
+import { NowPlayingScreen } from "./screens/NowPlayingScreen.js";
 import { usePersistSession } from "./viewmodels/usePersistSession.js";
 
 export function AppShell() {
@@ -34,7 +35,7 @@ export function AppShell() {
   const top = detail[detail.length - 1];
 
   return (
-    <div className="grid h-full grid-cols-[13rem_1fr] grid-rows-[1fr_5rem]">
+    <div className="grid h-full grid-cols-[13rem_1fr] grid-rows-[1fr_var(--player-bar-h)]">
       <Sidebar />
       <main className="overflow-y-auto bg-background">
         {top?.kind === "album" ? (
@@ -61,6 +62,7 @@ export function AppShell() {
       <PlaybackAlert />
       <PlayerBar />
       <QueueDrawer />
+      <NowPlayingScreen />
     </div>
   );
 }

@@ -359,6 +359,14 @@ The app is a React/Vite shell at `index.html` → `src/app/main.tsx`.
   Removing it resets `transform` to none, so the record snapped upright on pause
   and jumped on resume. It spins on `isPlaying` only — a failed resolve leaves it
   correctly still.
+- **The tonearm's angles are solved, not eyeballed** (`vinyl-geometry.ts`, tested
+  in `vinyl-geometry.test.ts`). Every dimension is a fraction of the record's
+  diameter so the arm scales with `size`; the needle must land between the label
+  (0.18) and the rim (0.50) when playing, and outside the rim when parked. Change
+  `ARM_LENGTH` or the pivot and those have to be re-solved — the test is what
+  says so, because a needle hovering over the label typechecks and builds fine.
+  The arm is one rotating element carrying counterweight, shaft and headshell:
+  three elements animated in parallel drift apart at the edges of the easing.
 - **Deliberately not built:** router (nav is a stack in the UI store — browser
   Back still exits the app), source-picker modal, Playlists tab,
   responsive/mobile layout.

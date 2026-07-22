@@ -885,8 +885,13 @@ source **picker**, add-to-playlist or autoplay-radio — those are §5's deferre
 picker, an unbuilt playlist UI, and an unused `RadioSeed` respectively, and
 drawing controls for absent features is how a UI starts lying about itself.
 
-**Generated cover art** (`ProceduralArt.tsx`, and the record on the now-playing
-view, `Vinyl.tsx`) is the one visual piece no registry provides. Most releases outside the mainstream have no artwork, and a grid of
+**Generated cover art** (`ProceduralArt.tsx`, and the record and tonearm on the
+now-playing view, `Vinyl.tsx`) is the one visual piece no registry provides. The
+arm's geometry lives in a plain module (`vinyl-geometry.ts`) rather than inline,
+so its one real constraint is testable: the needle lands in the grooves when
+playing and clear of the record when parked. Decoration is still allowed to be
+wrong in ways the typechecker cannot see, and this is the cheapest place to say
+what "wrong" means. Most releases outside the mainstream have no artwork, and a grid of
 identical grey initials is the single biggest reason a library looks unfinished.
 Compositions are deterministic from the release id (art that reshuffles reads as
 a glitch) and are pure CSS referencing tokens, so they restyle for free.

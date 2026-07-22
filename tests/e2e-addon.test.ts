@@ -34,6 +34,7 @@ import {
   type MusicBrainzClient,
   type MbArtist,
   type MbRelease,
+  type MbAlbum,
   type MbRecording,
   type MbReleaseDetail,
 } from "@p2p-songs/musicmeta";
@@ -58,7 +59,7 @@ const fakeMb: MusicBrainzClient = {
   async searchArtists(): Promise<MbArtist[]> {
     return [];
   },
-  async browseArtistReleases(): Promise<MbRelease[]> {
+  async artistDiscography(): Promise<MbAlbum[]> {
     return [];
   },
   async searchReleases(): Promise<MbRelease[]> {

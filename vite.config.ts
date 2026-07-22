@@ -1,5 +1,7 @@
 import { defineConfig, searchForWorkspaceRoot, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
+import { fileURLToPath } from "node:url";
 import { cspMetaTag } from "./src/app/security/csp.js";
 
 /**
@@ -26,7 +28,11 @@ function cspPlugin(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), cspPlugin()],
+  plugins: [react(), tailwindcss(), cspPlugin()],
+  resolve: {
+    // `@/` is the shadcn CLI convention; component source it writes imports this way.
+    alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
+  },
   server: {
     fs: { allow: [searchForWorkspaceRoot(process.cwd())] },
   },

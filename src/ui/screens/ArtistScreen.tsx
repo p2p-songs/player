@@ -6,7 +6,9 @@
  * reuses the existing album screen with no special casing.
  */
 import { useArtistAlbums, isUnreachable } from "../viewmodels/useCatalog.js";
-import { Artwork, Loading, StateBlock } from "../components/common.js";
+import { Artwork } from "../components/common.js";
+import { Loading, Muted, PageTitle, Row, RowMain, RowTime, Rows, StateBlock } from "../components/primitives.js";
+import { Button } from "@/components/ui/button";
 
 export function ArtistScreen({
   artistId,
@@ -23,16 +25,16 @@ export function ArtistScreen({
   const rows = albums.data ?? [];
 
   return (
-    <div className="main-inner">
-      <button type="button" className="btn btn-sm" onClick={onBack} style={{ marginBottom: 18 }}>
+    <div className="max-w-5xl p-8 pb-12">
+      <Button size="sm" variant="outline" onClick={onBack} className="mb-5">
         ‹ Back
-      </button>
+      </Button>
 
-      <h1 className="page-title" style={{ marginBottom: 4 }}>
-        {artistName}
-      </h1>
-      <div className="muted" style={{ marginBottom: 18 }}>
-        {albums.isLoading ? "Loading discography…" : `${rows.length} ${rows.length === 1 ? "release" : "releases"}`}
+      <PageTitle className="mb-1">{artistName}</PageTitle>
+      <div className="mb-5">
+        <Muted>
+          {albums.isLoading ? "Loading discography…" : `${rows.length} ${rows.length === 1 ? "release" : "releases"}`}
+        </Muted>
       </div>
 
       {albums.isLoading ? (
@@ -47,38 +49,28 @@ export function ArtistScreen({
               : "No installed addon could provide this artist's releases."
           }
           action={
-            <button type="button" className="btn btn-sm" onClick={() => albums.refetch()}>
+            <Button size="sm" onClick={() => albums.refetch()}>
               Retry
-            </button>
+            </Button>
           }
         />
       ) : rows.length === 0 ? (
         <StateBlock
-          icon="⧉"
+          icon="◈"
           title="No releases found"
           message="No installed catalog addon lists any releases for this artist."
         />
       ) : (
-        <div className="rows">
+        <Rows>
           {rows.map((album) => (
-            <button
-              key={album.id}
-              type="button"
-              className="row"
-              onClick={() => onOpenAlbum(album.id, album.name)}
-            >
-              <Artwork src={album.poster} alt={album.name} size={38} />
-              <span className="row-main">
-                <span className="row-title">{album.name}</span>
-                {/* The catalog puts the release year here — every row shares the artist. */}
-                <span className="row-sub">{album.description ?? ""}</span>
-              </span>
-              <span className="row-time" aria-hidden="true">
-                ›
-              </span>
-            </button>
+            <Row key={album.id} onClick={() => onOpenAlbum(album.id, album.name)}>
+              <Artwork src={album.poster} alt={album.name} seed={album.id} size={38} />
+              {/* The catalog puts the release year here — every row shares the artist. */}
+              <RowMain title={album.name} sub={album.description ?? ""} />
+              <RowTime>›</RowTime>
+            </Row>
           ))}
-        </div>
+        </Rows>
       )}
     </div>
   );

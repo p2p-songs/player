@@ -1,7 +1,9 @@
-/** Up-next drawer (mockup panel 6's Queue tab). Reads play order, so it stays correct under shuffle. */
+/** Up-next drawer. Reads play order, so it stays correct under shuffle. */
 import { useUpNext, usePlayer } from "../viewmodels/useEngineState.js";
 import { useUi } from "../../app/store.js";
-import { Artwork, formatTime, StateBlock } from "./common.js";
+import { Artwork, formatTime } from "./common.js";
+import { Row, RowIndex, RowMain, RowTime, Rows, StateBlock } from "./primitives.js";
+import { Button } from "@/components/ui/button";
 
 export function QueueDrawer() {
   const open = useUi((s) => s.queueOpen);
@@ -12,30 +14,30 @@ export function QueueDrawer() {
   if (!open) return null;
 
   return (
-    <aside className="queue-drawer" aria-label="Queue">
-      <div className="queue-head">
-        <span>Up next</span>
-        <button type="button" className="btn btn-sm" onClick={toggle}>
+    <aside
+      aria-label="Queue"
+      className="fixed top-0 bottom-20 right-0 z-20 flex w-85 flex-col border-l-2 border-border bg-card shadow-xl"
+    >
+      <div className="flex items-center justify-between border-b-2 border-border px-4 py-3">
+        <span className="font-head text-xs uppercase tracking-[0.14em]">Up next</span>
+        <Button size="xs" variant="outline" onClick={toggle}>
           Close
-        </button>
+        </Button>
       </div>
-      <div className="queue-body">
+      <div className="overflow-y-auto">
         {upNext.length === 0 ? (
           <StateBlock icon="♪" title="Nothing up next" message="Play something to build a queue." />
         ) : (
-          <div className="rows rows-flush">
+          <Rows flush>
             {upNext.map((item, i) => (
-              <button key={item.id} type="button" className="row" onClick={() => selectItem(item.id)}>
-                <span className="row-index">{i + 1}</span>
-                <Artwork src={item.track.artwork} alt={item.track.title} size={32} />
-                <span className="row-main">
-                  <span className="row-title">{item.track.title}</span>
-                  <span className="row-sub">{item.track.artist ?? "Unknown artist"}</span>
-                </span>
-                <span className="row-time">{formatTime(item.track.durationMs)}</span>
-              </button>
+              <Row key={item.id} onClick={() => selectItem(item.id)}>
+                <RowIndex>{i + 1}</RowIndex>
+                <Artwork src={item.track.artwork} alt={item.track.title} seed={item.track.recordingId} size={32} />
+                <RowMain title={item.track.title} sub={item.track.artist ?? "Unknown artist"} />
+                <RowTime>{formatTime(item.track.durationMs)}</RowTime>
+              </Row>
             ))}
-          </div>
+          </Rows>
         )}
       </div>
     </aside>

@@ -1,0 +1,137 @@
+/**
+ * The single shipped look (ARCHITECTURE §7a).
+ *
+ * Structure is RetroUI's — a neobrutalist shadcn registry — so the components we
+ * install from it read the same variables we do. The palette is PHONO's: cream
+ * canvas, ink borders, burnt orange, gold. There is **no runtime theme
+ * switching**; this is the design we ship, and every visual decision lives here
+ * or in `components/ui/*`, never in a screen.
+ *
+ * The load-bearing detail of this aesthetic is that `--border` is ink and the
+ * shadows are *hard offsets of it* — `4px 4px 0 var(--border)`, not a blur.
+ * That single relationship is most of why it reads as printed rather than
+ * rendered, and it is why the shadow scale below is defined in terms of
+ * `--border` rather than as fixed colours.
+ */
+@import "tailwindcss";
+
+@theme inline {
+  --font-head: var(--font-head);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --radius: var(--radius);
+
+  --shadow-xs: 1px 1px 0 0 var(--border);
+  --shadow-sm: 2px 2px 0 0 var(--border);
+  --shadow: 3px 3px 0 0 var(--border);
+  --shadow-md: 4px 4px 0 0 var(--border);
+  --shadow-lg: 6px 6px 0 0 var(--border);
+  --shadow-xl: 10px 10px 0 1px var(--border);
+  --shadow-2xl: 16px 16px 0 1px var(--border);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--primary-hover);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary-hover: var(--secondary-hover);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* App chrome — the sidebar and player bar sit on ink, not on the canvas. */
+  --color-chrome: var(--chrome);
+  --color-chrome-foreground: var(--chrome-foreground);
+  --color-chrome-muted: var(--chrome-muted);
+}
+
+:root {
+  --radius: 0;
+
+  --font-head: "Archivo Black", "Arial Black", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Space Grotesk", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --background: #ebe5d9;
+  --foreground: #241c14;
+  --card: #f9f5ec;
+  --card-foreground: #241c14;
+
+  --primary: #c2562b;
+  --primary-hover: #a44521;
+  --primary-foreground: #f9f5ec;
+
+  --secondary: #241c14;
+  --secondary-hover: #3a2e24;
+  --secondary-foreground: #f9f5ec;
+
+  --muted: #e0d8c8;
+  --muted-foreground: #6b5f4d;
+
+  --accent: #d9a441;
+  --accent-foreground: #241c14;
+
+  --destructive: #a83a22;
+  --destructive-foreground: #f9f5ec;
+
+  /* Ink. Also the colour every hard shadow is cast in — see the note above. */
+  --border: #241c14;
+  --input: #f9f5ec;
+  --ring: #c2562b;
+
+  --chrome: #2a211a;
+  --chrome-foreground: #f4eee2;
+  --chrome-muted: #a2947f;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+    box-sizing: border-box;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+    margin: 0;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-head;
+  }
+
+  /* Every clickable thing is a real button, so the semantics were already
+     right; this makes the state visible. Ink offset, matching the shadows. */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+}

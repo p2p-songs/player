@@ -792,180 +792,70 @@ main objection.)*
   treats "YT-backed item" as an alternate audio backend behind the same
   interface, so the queue/scheduler don't care which backend a given item uses.
 
-### 7a. Theming — pluggable UI, not a hardcoded look
+### 7a. The look — one shipped design, built on RetroUI
 
-Yes: the look-and-feel is a **drop-in**, not baked in. This falls out of the
-`core`/`ui` boundary (§8a) almost for free — if the engine owns all state and
-behavior and the UI only renders it, then the UI is *itself* swappable.
-"Retro", "minimal", "modern" become selectable themes, switchable at runtime,
-addable without touching the engine.
+**There is no theming.** The player ships a single design; it is not selectable,
+not installable, and not switchable at runtime. An earlier revision of this
+section specified a token contract with bundled themes and a design for
+user-installed theme documents (§7b). All of it is **superseded** — see the
+decision record below, because the reasoning matters more than the outcome.
 
-**A theme is data, never code.** This is the decision the whole design turns
-on, and it is a security constraint before it is an aesthetic one. The player
-holds configured addon URLs carrying debrid keys, and `script-src 'self'` (§6a)
-exists to stop injected code reading them. A theme that could ship JS would walk
-straight through that; a theme that could ship *CSS* is barely better, because
-CSS is not inert — attribute selectors plus `background-image` exfiltrate field
-contents, and restyling can hide the very redaction the credential story depends
-on. So a theme is a flat record of **token name → value**, and nothing else.
+The design system is [RetroUI](https://retroui.dev/), a neobrutalist registry for
+the shadcn CLI. Components are **copied into the repo** (`src/components/ui/`),
+not depended on: we own the source and may edit it. Underneath sit Radix
+primitives, which is where the accessibility we were otherwise hand-rolling
+comes from — focus traps, roving tabindex, dismissal, ARIA wiring.
 
-> An earlier revision of this section proposed a second tier in which a theme
-> supplied its own React components (a spinning-vinyl now-playing, a list-first
-> minimal). That is **superseded**. Surveying six full theme designs
-> (Bauhaus, neon, Y2K, retro-lounge, brutalist, zine) showed the information
-> architecture identical in all of them — sidebar, player bar, album table,
-> the same six essential states. What separated them was type, geometry, border
-> weight, elevation and colour. Structural theming would have bought little and
-> cost the "themes are data" property, which is what makes them installable at
-> all.
+- `src/ui/globals.css` — the whole visual definition: Tailwind v4 entry,
+  RetroUI's `@theme inline` block, and PHONO's palette (cream canvas, ink
+  borders, burnt orange, gold).
+- `src/components/ui/` — RetroUI components, CLI-managed. Local edits here are
+  clobbered by `shadcn add --overwrite`; prefer changing tokens.
+- `src/ui/components/primitives.tsx` — app-level primitives (`Row`, `Rows`,
+  `PageTitle`, `SectionTitle`, `StateBlock`) layered over them.
 
-**The token contract** (`src/ui/theme/contract.ts`) is the whole of what a
-theme may change, and the token names *are* the CSS custom property names — so
-one file is the source of truth for what a theme may set, what the stylesheet
-may read, and what validation accepts once themes are installed. It is
-deliberately wider than colour: colour alone makes every theme the same app
-tinted. It carries a display/body/mono type triple and a size scale, letter
-spacing and label casing, radii (including pill and round separately, so a
-square theme can flatten chips while keeping a circular transport button),
-border widths, shadow *and* glow, focus ring, and the art-placeholder fill.
+**The load-bearing relationship** is that `--border` is ink and every shadow is a
+*hard offset of it* — `4px 4px 0 var(--border)`, never a blur. That one fact is
+most of why the design reads as printed rather than rendered.
 
-**Applying a theme** (`src/ui/theme/index.ts`) sets each property individually
-with `setProperty` — never by building a stylesheet string. `setProperty`
-parses against the property's grammar and drops anything malformed, so a value
-carrying `}` cannot close its declaration and open a rule of its own. Schema
-validation will be the first gate for installed themes; this is the second.
-Application iterates the *contract*, not the theme's own keys, so a theme can
-never set a property outside it however it was constructed.
+**The rule that keeps it coherent: screens compose and lay out; they do not
+carry visual utility classes.** Every border, shadow, colour and type decision
+lives in `globals.css`, `components/ui/*`, or `primitives.tsx`. Tailwind
+otherwise scatters styling across every call site, and a thousand
+`border-2 border-black shadow-md` in screens is the same failure as a thousand
+hardcoded hex values — with nothing able to catch it.
 
-```
-src/ui/
-  viewmodels/          # headless hooks over the engine — theme-agnostic
-  theme/
-    contract.ts        # TOKEN_NAMES + ThemeTokens/Theme types — the whole vocabulary
-    index.ts           # registry, getTheme (falls back), applyTheme
-    themes/            # bundled themes: espresso (default), bauhaus, cyberpunk
-    theme.test.ts      # contract/CSS agreement, incl. "no hardcoded themeable value"
-  tokens.css           # default values for first paint + base element styles
-  styles.css           # component rules — read tokens only
-```
+**Generated cover art** (`ProceduralArt.tsx`) is the one visual piece no registry
+provides. Most releases outside the mainstream have no artwork, and a grid of
+identical grey initials is the single biggest reason a library looks unfinished.
+Compositions are deterministic from the release id (art that reshuffles reads as
+a glitch) and are pure CSS referencing tokens, so they restyle for free.
 
-**The failure mode worth guarding** is a literal colour, radius or font size
-left in a component rule: it produces one widget that keeps its old look when
-the theme changes, which reads as a rendering bug and is otherwise found by eye,
-one screen at a time. `theme.test.ts` asserts the stylesheet hardcodes none, and
-that the contract, `tokens.css` and the rules that read them stay in agreement
-— including that no token is declared which nothing renders, since a token with
-no consumer is one a theme author can tune with no feedback.
+#### Decision record: why not themes
 
-**Installable themes** are the intended direction (§7b), and everything above is
-shaped for it: a bundled theme and an installed one are the same record, so
-install is fetch + validate + store rather than a second mechanism.
+Three positions were held and discarded in order, each on evidence:
 
-### 7b. Installable themes — designed, not yet built
+1. **Component-level theming** (a theme supplies its own React components) —
+   dropped because six full theme designs shared one information architecture.
+   What separated them was type, geometry, border weight and elevation.
+2. **A token contract with installable, data-only themes** — built, then
+   scrapped. It was sound on security (a theme could express no rule, so it
+   could not exfiltrate or hide the §6a redaction) but it did not deliver
+   *character*: colour is the cheap axis, and the result was one app tinted
+   three ways. The deeper problem was that it optimised the styling layer while
+   the actual gap was the **component** layer — the app had no dialog, no menu,
+   no tabs, no toast, and a queue drawer that was a `position: fixed` div with
+   no focus trap.
+3. **Hand-building the neobrutalist look** — abandoned on discovering the
+   shadcn registry directory. RetroUI ships that exact aesthetic (thick borders,
+   hard shadows, loud colour) as 50+ components, along with everything in the
+   list above.
 
-Themes install the way addons do: paste a URL, fetch, validate, keep. The
-differences from an addon are all simplifications — a theme is not a running
-service, so it is fetched **once** and the validated document is stored, which
-means no network at launch, no per-launch request to the author's host, and it
-works offline. A theme URL is also **not** secret-bearing, so unlike a
-configured addon URL it needs no redaction and may sync freely.
-
-Every value is typed, not free text: colours parse as colours, lengths carry a
-unit allowlist, enums are enums, and unknown keys are rejected rather than
-ignored. A theme that fails validation is not partially applied.
-
-Three asset kinds are wanted for real fidelity, each with a constraint that
-keeps "data, never code" true:
-
-- **Fonts** — size-capped base64 in the document, decoded to an `ArrayBuffer`
-  and registered via `new FontFace(name, buffer)`. No CSS string is built from
-  theme input, so there is nothing to inject into.
-- **Icons** — inline SVG parsed against a strict allowlist (geometry elements
-  and attributes only; `script`, `foreignObject`, `style`, `href` and all event
-  handlers dropped) and rebuilt as DOM nodes, never `innerHTML`.
-- **Textures** — `data:` URIs only, size-capped. Not `https:` URLs, which would
-  hand the theme's author the user's IP on every launch.
-
-The default theme is always reachable so a bad or removed theme can be recovered
-from — `getTheme` already falls back rather than leaving the app unstyled.
-
-Because every theme is wired to the same headless hooks, dropping in a new
-one is: add a folder, implement the required surfaces (reuse `primitives/`
-where you can), register it. The engine, scheduler, queue, and data layers
-are untouched.
-
-**Scope discipline (so this doesn't balloon):** build the *seam* — headless
-hooks + theme contract + token layer + one reference theme — during the UI
-phase (P-5), but **ship exactly one theme first**, authored against the
-contract. That proves the seam and makes theme #2 a genuine drop-in, without
-paying up front to build three UIs. Add more themes when they're actually
-wanted. A base theme plus themes that override only a few surfaces (inheriting
-the rest) keeps the per-theme cost down.
-
-**Security constraint (hard invariant): themes are first-party, bundled code —
-never remote code.** Themes run in the same origin as the credential store
-(§6a), so a theme fetched or `eval`'d from a URL at runtime could exfiltrate a
-configured addon's debrid key. Themes must be reviewed, in-repo, build-time
-code only. This is why the "distribute themes separately, like addons" idea
-below is a **non-goal for v1**: pluggable *sources* (addons) are safe because
-they're separate network services the player only exchanges data with;
-pluggable *UI* would be foreign code in the player's own origin, which is a
-credential-theft vector. *(If external themes are ever revisited, they'd need a
-real sandbox — separate origin / iframe / worker — not just the contract.)*
-
----
-
-## 8. Engine/UI boundary & repo structure
-
-**Single Vite app, one hard internal boundary — not a monorepo (yet).** The
-current master-plan sketch had `music-core` and `player-app` as separate
-packages; for a single web target that's premature ceremony. Instead:
-
-```
-player/
-  src/
-    core/            # PURE engine — no React, no UI imports. The "music-core".
-      queue/         #   queue model + operations
-      playback/      #   hand-rolled discriminated-union FSM (§4b)
-      scheduler/     #   resolution + prefetch
-      addon/         #   protocol client (uses @p2p-songs/protocol types)
-      audio/         #   audio backends (html-audio, youtube, fake) behind one interface
-      persistence/   #   Dexie schema + adapters
-    ui/              # may import from core, never vice versa
-      viewmodels/    #   headless per-surface hooks over the engine (theme-agnostic) — §7a
-      theme-contract.ts  # typed surface interface every theme implements — §7a
-      primitives/    #   token-driven shared atoms themes may reuse
-      themes/        #   drop-in themes (retro/ minimal/ modern/…): components + tokens — §7a
-      ThemeProvider.tsx  # theme registry + runtime switch + token injection
-    app/             # Vite entry, router, providers (TanStack Query, stores)
-  docs/
-    ARCHITECTURE.md  # this file
-  tests/             # headless engine tests (fake audio + fake resolver)
-```
-
-- The `core → ui` one-way rule is **enforced by an ESLint import boundary
-  rule**, so the "headless, UI-agnostic engine" property is mechanical, not
-  aspirational. This is the web-native equivalent of Stremio's Rust FFI
-  boundary — same guarantee, no FFI.
-- If a native shell (Tauri) or second UI ever appears, `src/core` promotes to
-  a package with a one-line move. We pay that cost only if it's ever real.
-
-**Protocol types sharing — decided:** the addon protocol's TypeScript types
-(manifest, stream object, resource shapes) are the wire contract between
-addons and the player, so they get **one source of truth**, not a copy on
-each side that can silently drift. Canonical home is the **`addon-sdk` repo**
-(the SDK is literally the tool for implementing the protocol, so the contract
-belongs with it), exported as a **schema-first** `@p2p-songs/protocol` package
-that this repo depends on. Schema-first (zod): the zod schemas are the single
-source of truth, TypeScript types are `z.infer`red from them, and runtime
-validators come for free — better than hand-maintained types + separate
-validators for a wire contract (one definition, cannot drift). Zero heavy
-deps; type-only consumers (this player, at compile time) use `import type` and
-pay nothing at runtime. Mechanics during early churn: consume it as a **pinned
-git dependency** to avoid a publish-on-every-change treadmill while the
-protocol is pre-1.0; promote to a properly published npm / GitHub Packages
-release when the protocol stabilizes at v1. Finalized packaging details land
-in the `addon-sdk` repo's own plan, since that's where the package lives.
+The remaining consequence worth stating: **switching aesthetic later is a
+build-time developer operation, not a feature.** Palette, radius and shadow are
+variables and swap cheaply; components are copied source and would need
+re-running the CLI plus a diff review. That cost is bounded only by the
+"screens carry no visual utilities" rule above.
 
 ### 8a. The boundary *enables* the UI/UX — it doesn't limit it
 

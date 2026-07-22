@@ -35,6 +35,20 @@ export type CspProfile = "dev" | "prod";
  */
 const LOOPBACK_ADDON = ["http://localhost:*", "http://127.0.0.1:*"];
 
+/**
+ * Google Fonts, for the bundled themes' display faces (§7a).
+ *
+ * A deliberate, scoped exception to "no remote CSS": two pinned origins serving
+ * only `@font-face` declarations and font binaries. It is **not** a loosening of
+ * the theme rule — a theme still may not express a selector, and this stylesheet
+ * is authored by neither us nor a theme. The real cost is privacy: Google sees
+ * the IP of anyone using a theme with a webfont. The default theme uses a system
+ * stack precisely so that cost is opt-in, and self-hosting the woff2 files
+ * removes it entirely if that trade stops being acceptable.
+ */
+const FONT_CSS = ["https://fonts.googleapis.com"];
+const FONT_FILES = ["https://fonts.gstatic.com"];
+
 /** Vite's HMR socket — dev only, and never a `media-src`/addon origin. */
 const HMR_SOCKET = ["ws://localhost:*", "ws://127.0.0.1:*"];
 
@@ -55,12 +69,12 @@ export function buildCsp(profile: CspProfile): string {
     "script-src": scriptSrc,
     // React sets inline styles via the CSSOM (exempt), but allow inline styles
     // so a stylesheet-injecting dep can't hard-break the UI. Styles can't run script.
-    "style-src": ["'self'", "'unsafe-inline'"],
+    "style-src": ["'self'", "'unsafe-inline'", ...FONT_CSS],
+    "font-src": ["'self'", "data:", ...FONT_FILES],
     "img-src": ["'self'", "https:", "data:", "blob:"],
     // Audio comes from debrid/CDN https origins, or from a loopback addon.
     "media-src": ["'self'", "https:", ...LOOPBACK_ADDON],
     "connect-src": connectSrc,
-    "font-src": ["'self'", "data:"],
     "worker-src": ["'self'", "blob:"],
     "manifest-src": ["'self'"],
     "object-src": ["'none'"],

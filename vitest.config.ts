@@ -1,4 +1,5 @@
 import { defineConfig } from "vitest/config";
+import { fileURLToPath } from "node:url";
 
 /**
  * Dedicated vitest config so the harness `vite.config.ts` (root: "harness")
@@ -8,11 +9,8 @@ import { defineConfig } from "vitest/config";
  */
 export default defineConfig({
   root: ".",
+  resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
   test: {
     include: ["src/**/*.test.ts", "tests/**/*.test.ts"],
-    // Vitest replaces CSS imports with empty strings unless asked not to. The
-    // theme test asserts *about* the stylesheets (that no themeable value is
-    // hardcoded), reading them with `?raw` — which needs this on.
-    css: true,
   },
 });

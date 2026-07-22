@@ -1,7 +1,7 @@
 /**
- * Search (mockup panel 3) — the core loop: query every installed catalog addon,
- * merge, click a song to play it. Failure is surfaced honestly: "no addons could
- * be reached" is a different state from "no results" (§6 fan-out semantics).
+ * Search — the core loop: query every installed catalog addon, merge, click a
+ * song to play it. Failure is surfaced honestly: "no addons could be reached" is
+ * a different state from "no results" (§6 fan-out semantics).
  */
 import { useState } from "react";
 import type { ContentType } from "@p2p-songs/protocol";
@@ -9,7 +9,11 @@ import { useUi } from "../../app/store.js";
 import { useSearch, isUnreachable, previewToTrack } from "../viewmodels/useCatalog.js";
 import { usePlayer } from "../viewmodels/useEngineState.js";
 import { useInstalledAddons } from "../viewmodels/useAddons.js";
-import { Artwork, Loading, StateBlock } from "../components/common.js";
+import { Artwork } from "../components/common.js";
+import { Loading, PageTitle, PartialBanner, Row, RowMain, RowTime, Rows, StateBlock } from "../components/primitives.js";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const TABS: { type: ContentType; label: string }[] = [
   { type: "track", label: "Songs" },
@@ -35,66 +39,58 @@ export function SearchScreen({
   const search = useSearch(type, query, hasCatalogAddon);
 
   return (
-    <div className="main-inner">
-      <h1 className="page-title">Search</h1>
+    <div className="max-w-5xl p-8 pb-12">
+      <PageTitle className="mb-6">Search</PageTitle>
 
-      <div className="field">
-        <span aria-hidden="true" className="muted">
-          ⌕
-        </span>
-        <input
+      <div className="flex items-center gap-2">
+        <Input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search songs, albums and artists"
           aria-label="Search"
           autoFocus
+          className="flex-1"
         />
         {query ? (
-          <button type="button" className="t-btn" style={{ color: "var(--text-muted)" }} onClick={() => setQuery("")} aria-label="Clear">
+          <Button variant="outline" aria-label="Clear" onClick={() => setQuery("")}>
             ✕
-          </button>
+          </Button>
         ) : null}
       </div>
 
-      <div className="inline" style={{ margin: "14px 0 4px" }}>
-        {TABS.map((tab) => (
-          <button
-            key={tab.type}
-            type="button"
-            className={type === tab.type ? "btn btn-sm btn-primary" : "btn btn-sm"}
-            onClick={() => setType(tab.type)}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      <Tabs value={type} onValueChange={(v) => setType(v as ContentType)} className="mt-4">
+        <TabsList>
+          {TABS.map((tab) => (
+            <TabsTrigger key={tab.type} value={tab.type}>
+              {tab.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
 
       {hasCatalogAddon && !hasStreamAddon ? (
-        <div className="banner" role="status" style={{ marginTop: 14 }}>
-          <span aria-hidden="true">⚠</span>
-          <span>
-            You can search, but nothing can play yet — no <strong>stream</strong> addon is installed.
-          </span>
+        <div className="mt-4">
+          <PartialBanner message="You can search, but nothing can play yet — no stream addon is installed." />
         </div>
       ) : null}
 
       {!hasCatalogAddon ? (
         <StateBlock
-          icon="⧉"
+          icon="◈"
           title="No catalog addon installed"
           message="Install an addon that provides a catalog to search for music."
         />
       ) : !query.trim() ? (
         <StateBlock
-          icon="⌕"
+          icon="◎"
           title="Search for music"
           message="Results come from every catalog addon you've installed. A catalog knows about far more music than any one stream addon can play, so try these known-good picks:"
           action={
-            <div className="inline" style={{ flexWrap: "wrap", justifyContent: "center", marginTop: 6 }}>
+            <div className="mt-2 flex flex-wrap justify-center gap-2">
               {["monkeys spinning monkeys", "fluffing a duck", "local forecast"].map((q) => (
-                <button key={q} type="button" className="btn btn-sm" onClick={() => setQuery(q)}>
+                <Button key={q} size="sm" variant="outline" onClick={() => setQuery(q)}>
                   {q}
-                </button>
+                </Button>
               ))}
             </div>
           }
@@ -111,37 +107,34 @@ export function SearchScreen({
               : "Something went wrong running that search."
           }
           action={
-            <button type="button" className="btn btn-sm" onClick={() => search.refetch()}>
+            <Button size="sm" onClick={() => search.refetch()}>
               Retry
-            </button>
+            </Button>
           }
         />
       ) : (search.data ?? []).length === 0 ? (
-        <StateBlock icon="⌕" title="No results found" message="Try different keywords." />
+        <StateBlock icon="◎" title="No results found" message="Try different keywords." />
       ) : (
-        <div className="rows" style={{ marginTop: 12 }}>
-          {(search.data ?? []).map((item) => {
-            // A track plays immediately; an album or artist opens a screen.
-            const open =
-              type === "track"
-                ? () => playTracks([previewToTrack(item)])
-                : type === "album"
-                  ? () => onOpenAlbum(item.id, item.name)
-                  : () => onOpenArtist(item.id, item.name);
-            return (
-              <button key={item.id} type="button" className="row" onClick={open}>
-                <Artwork src={item.poster} alt={item.name} size={38} />
-                <span className="row-main">
-                  <span className="row-title">{item.name}</span>
+        <div className="mt-4">
+          <Rows>
+            {(search.data ?? []).map((item) => {
+              // A track plays immediately; an album or artist opens a screen.
+              const open =
+                type === "track"
+                  ? () => playTracks([previewToTrack(item)])
+                  : type === "album"
+                    ? () => onOpenAlbum(item.id, item.name)
+                    : () => onOpenArtist(item.id, item.name);
+              return (
+                <Row key={item.id} onClick={open}>
+                  <Artwork src={item.poster} alt={item.name} seed={item.id} size={38} />
                   {/* Artist rows carry no secondary line — the name is the whole item. */}
-                  {type === "artist" ? null : <span className="row-sub">{item.description ?? "Unknown artist"}</span>}
-                </span>
-                <span className="row-time" aria-hidden="true">
-                  {type === "track" ? "\u25B6" : "\u203A"}
-                </span>
-              </button>
-            );
-          })}
+                  <RowMain title={item.name} sub={type === "artist" ? undefined : (item.description ?? "Unknown artist")} />
+                  <RowTime>{type === "track" ? "▶" : "›"}</RowTime>
+                </Row>
+              );
+            })}
+          </Rows>
         </div>
       )}
     </div>

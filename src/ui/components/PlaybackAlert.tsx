@@ -1,11 +1,12 @@
 /**
  * Surfaces a failed playback attempt just above the player bar. Without this the
  * engine's terminal `error` state is invisible: the bar shows the track, the
- * progress sits at 0:00, and nothing explains why (mockup panel 9).
+ * progress sits at 0:00, and nothing explains why.
  */
 import { usePlaybackProblem } from "../viewmodels/usePlaybackProblem.js";
 import { usePlayer } from "../viewmodels/useEngineState.js";
 import { useUi } from "../../app/store.js";
+import { Button } from "@/components/ui/button";
 
 export function PlaybackAlert() {
   const problem = usePlaybackProblem();
@@ -14,21 +15,23 @@ export function PlaybackAlert() {
   if (!problem) return null;
 
   return (
-    <div className="playback-alert" role="alert">
+    <div
+      role="alert"
+      className="fixed inset-x-0 bottom-20 z-30 flex items-center gap-3 border-y-2 border-border border-b-primary bg-accent px-5 py-2.5 text-sm text-accent-foreground"
+    >
       <span aria-hidden="true">⚠</span>
-      <span className="playback-alert-text">
-        <strong>{problem.title}</strong>
-        <span className="muted"> — {problem.message}</span>
+      <span className="min-w-0 flex-1">
+        <strong className="font-head uppercase">{problem.title}</strong> — {problem.message}
       </span>
       {problem.addonsAction ? (
-        <button type="button" className="btn btn-sm" onClick={() => setView("addons")}>
+        <Button size="sm" variant="secondary" onClick={() => setView("addons")}>
           Manage addons
-        </button>
+        </Button>
       ) : null}
       {item ? (
-        <button type="button" className="btn btn-sm" onClick={() => selectItem(item.id)}>
+        <Button size="sm" onClick={() => selectItem(item.id)}>
           Retry
-        </button>
+        </Button>
       ) : null}
     </div>
   );

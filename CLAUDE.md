@@ -241,23 +241,28 @@ The app is a React/Vite shell at `index.html` → `src/app/main.tsx`.
   selects the catalog **by id** — reusing search's "any catalog with a `search`
   extra" would have fired an unrelated argument-less search, since `album` now
   has two catalogs.
-- **Theming (2026-07-22) — `src/ui/theme/`.** A theme is a flat record of
-  **token name → value**, applied with `setProperty` per token. That is a
-  security constraint, not a style choice: the origin holds debrid keys, and CSS
-  counts as code (attribute selectors exfiltrate; restyling can hide the §6a
-  redaction). `contract.ts` holds `TOKEN_NAMES` — the names *are* the custom
-  property names, so one file governs what a theme may set, what the stylesheet
-  may read, and what validation will accept. Three bundled themes; `cyberpunk`
-  earns its place as the **first dark content canvas**, which is what surfaces
-  any rule that quietly assumed a light surface. **Don't regress:** no literal
-  colour/radius/font-size in `styles.css`, and no token nothing renders — both
-  are asserted in `theme/theme.test.ts`, because the failure is one widget that
-  keeps its old look and is otherwise found by eye. Structural/component
-  theming is **superseded** (ARCHITECTURE §7a): six full theme designs shared
-  one information architecture, so tokens carry it.
+- **The look — RetroUI (2026-07-22).** **There is no theming.** One shipped
+  design, not selectable or installable. Built on
+  [RetroUI](https://retroui.dev/), a neobrutalist **shadcn registry**: components
+  are copied into `src/components/ui/` (CLI-managed, we own the source) over
+  Radix primitives — which is where the dialog/select/tabs accessibility we were
+  otherwise hand-rolling comes from. Tailwind v4; `src/ui/globals.css` is the
+  entire visual definition (PHONO palette: cream, ink, burnt orange, gold).
+  **The signature is that `--border` is ink and shadows are hard offsets of it**
+  (`4px 4px 0 var(--border)`, never a blur).
+  **Don't regress — screens compose and lay out, they never carry visual utility
+  classes.** Borders/shadows/colours live in `globals.css`,
+  `src/components/ui/*`, or `src/ui/components/primitives.tsx`. Utilities
+  scattered across screens is the same failure as hardcoded hex, and nothing can
+  catch it. Local edits inside `src/components/ui/` are clobbered by
+  `shadcn add --overwrite`; prefer changing tokens.
+  `ProceduralArt.tsx` (deterministic per release id, pure CSS over tokens) is the
+  one visual piece no registry provides. Superseded, with reasoning, in
+  ARCHITECTURE §7a: component theming, then data-only installable themes — the
+  second was secure but delivered no character, because the real gap was the
+  component layer, not the styling layer.
 - **Deliberately not built:** router (nav is search→artist→album local state),
-  installable themes (§7b — designed, bundled-only for now), source-picker
-  modal, Playlists tab.
+  source-picker modal, Playlists tab, responsive/mobile layout.
 
 Next: **P-6** (PWA) or **P-7** (accounts/sync), or fill the addon gap —
 `stream-debrid` / `stream-ytmusic` are still unbuilt, and with only

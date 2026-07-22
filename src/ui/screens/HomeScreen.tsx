@@ -1,13 +1,16 @@
 /**
- * Home (mockup panel 2): recently played, from the durable play history (§6).
- * Doubles as the first-run guide when nothing is installed yet.
+ * Home: recently played, from the durable play history (§6). Doubles as the
+ * first-run guide when nothing is installed yet.
  */
 import { useQuery } from "@tanstack/react-query";
 import { useServices } from "../../app/providers.js";
 import { useInstalledAddons } from "../viewmodels/useAddons.js";
 import { usePlayer } from "../viewmodels/useEngineState.js";
 import { useUi } from "../../app/store.js";
-import { Artwork, Loading, StateBlock } from "../components/common.js";
+import { Artwork } from "../components/common.js";
+import { Loading, Muted, PageTitle, Row, RowMain, RowTime, Rows, SectionTitle, StateBlock } from "../components/primitives.js";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 
 export function HomeScreen() {
   const { repository } = useServices();
@@ -20,51 +23,47 @@ export function HomeScreen() {
     queryFn: () => repository.listRecentPlays(12),
   });
 
-  if (addonsLoading) return <div className="main-inner"><Loading /></div>;
+  if (addonsLoading)
+    return (
+      <div className="max-w-5xl p-8">
+        <Loading />
+      </div>
+    );
 
   const hasAddons = (addons ?? []).length > 0;
 
   return (
-    <div className="main-inner">
-      <h1 className="page-title">Home</h1>
+    <div className="max-w-5xl p-8 pb-12">
+      <PageTitle className="mb-6">Home</PageTitle>
 
       {!hasAddons ? (
-        <div className="card">
-          <div className="stack">
-            <strong>Welcome to PHONO</strong>
-            <div className="muted text-md">
+        <Card>
+          <CardContent className="flex flex-col items-start gap-3">
+            <strong className="font-head uppercase">Welcome to PHONO</strong>
+            <Muted>
               This player has no music of its own — it plays whatever your addons provide. Add one to get started:
               install a catalog addon to search, and a stream addon to play.
-            </div>
-            <div>
-              <button type="button" className="btn btn-primary" onClick={() => setView("addons")}>
-                Add an addon
-              </button>
-            </div>
-          </div>
-        </div>
+            </Muted>
+            <Button onClick={() => setView("addons")}>Add an addon</Button>
+          </CardContent>
+        </Card>
       ) : null}
 
-      <h2 className="section-title">Recently played</h2>
+      <SectionTitle>Recently played</SectionTitle>
       {history.isLoading ? (
         <Loading />
       ) : (history.data ?? []).length === 0 ? (
         <StateBlock icon="♪" title="Nothing played yet" message="Songs you play will show up here." />
       ) : (
-        <div className="rows">
+        <Rows>
           {(history.data ?? []).map((event) => (
-            <button key={event.id} type="button" className="row" onClick={() => playTracks([event.track])}>
-              <Artwork src={event.track.artwork} alt={event.track.title} size={38} />
-              <span className="row-main">
-                <span className="row-title">{event.track.title}</span>
-                <span className="row-sub">{event.track.artist ?? "Unknown artist"}</span>
-              </span>
-              <span className="row-time" aria-hidden="true">
-                ▶
-              </span>
-            </button>
+            <Row key={event.id} onClick={() => playTracks([event.track])}>
+              <Artwork src={event.track.artwork} alt={event.track.title} seed={event.track.recordingId} size={38} />
+              <RowMain title={event.track.title} sub={event.track.artist ?? "Unknown artist"} />
+              <RowTime>▶</RowTime>
+            </Row>
           ))}
-        </div>
+        </Rows>
       )}
     </div>
   );

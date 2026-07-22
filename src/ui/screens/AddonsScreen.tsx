@@ -1,11 +1,24 @@
 /**
- * Addon manager (mockup panel 7). The **only** way to add a source is pasting a
- * manifest URL — nothing is bundled or default-installed (§11). Stored URLs are
- * shown redacted because a configured one carries the user's credential (§6a).
+ * Addon manager. The **only** way to add a source is pasting a manifest URL —
+ * nothing is bundled or default-installed (§11). Stored URLs are shown redacted
+ * because a configured one carries the user's credential (§6a).
  */
 import { useState } from "react";
 import { useInstalledAddons, useInstallAddon, useRemoveAddon } from "../viewmodels/useAddons.js";
-import { Loading, StateBlock } from "../components/common.js";
+import {
+  Loading,
+  Muted,
+  PageTitle,
+  PartialBanner,
+  Row,
+  Rows,
+  SectionTitle,
+  StateBlock,
+} from "../components/primitives.js";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 
 export function AddonsScreen() {
   const { data: addons, isLoading } = useInstalledAddons();
@@ -20,84 +33,79 @@ export function AddonsScreen() {
   };
 
   return (
-    <div className="main-inner">
-      <h1 className="page-title">Addons</h1>
+    <div className="max-w-5xl p-8 pb-12">
+      <PageTitle className="mb-6">Addons</PageTitle>
 
-      <div className="card">
-        <div className="stack">
+      <Card>
+        <CardContent className="flex flex-col gap-3">
           <div>
-            <strong>Install an addon</strong>
-            <div className="muted text-md" style={{ marginTop: 2 }}>
-              Paste a manifest URL. The player ships with no sources of its own — everything comes from addons you add.
+            <strong className="font-head uppercase">Install an addon</strong>
+            <div className="mt-1">
+              <Muted>
+                Paste a manifest URL. The player ships with no sources of its own — everything comes from addons you
+                add.
+              </Muted>
             </div>
           </div>
-          <form onSubmit={submit} className="inline">
-            <div className="field" style={{ flex: 1 }}>
-              <span aria-hidden="true" className="muted">
-                ⧉
-              </span>
-              <input
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder="https://addon.example/manifest.json"
-                aria-label="Addon manifest URL"
-                spellCheck={false}
-              />
-            </div>
-            <button type="submit" className="btn btn-primary" disabled={install.isPending || !url.trim()}>
+          <form onSubmit={submit} className="flex gap-2">
+            <Input
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://addon.example/manifest.json"
+              aria-label="Addon manifest URL"
+              spellCheck={false}
+              className="flex-1"
+            />
+            <Button type="submit" disabled={install.isPending || !url.trim()}>
               {install.isPending ? "Installing…" : "Install"}
-            </button>
+            </Button>
           </form>
           {install.isError ? (
-            <div className="banner banner-danger" role="alert">
-              <span aria-hidden="true">⚠</span>
-              <span>
-                Couldn&apos;t install that addon. Check the URL is a reachable <code>manifest.json</code>.
-              </span>
-            </div>
+            <PartialBanner danger message="Couldn't install that addon. Check the URL is a reachable manifest.json." />
           ) : null}
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
-      <h2 className="section-title">Installed</h2>
+      <SectionTitle>Installed</SectionTitle>
       {isLoading ? (
         <Loading label="Loading addons…" />
       ) : !addons || addons.length === 0 ? (
         <StateBlock
-          icon="⧉"
+          icon="◈"
           title="No addons yet"
           message="Install one above to search and play music. Run a reference addon locally and paste its localhost URL to try it out."
         />
       ) : (
-        <div className="rows">
+        <Rows>
           {addons.map((addon) => (
-            <div key={addon.id} className="row" style={{ cursor: "default" }}>
-              <span className="row-main">
-                <span className="row-title">
-                  {addon.name}{" "}
-                  {addon.configured ? <span className="chip chip-accent">Configured</span> : null}
-                  {!addon.online ? <span className="chip">Offline</span> : null}
+            <Row key={addon.id}>
+              <span className="min-w-0 flex-1">
+                <span className="flex flex-wrap items-center gap-2 font-medium">
+                  {addon.name}
+                  {addon.configured ? <Badge>Configured</Badge> : null}
+                  {!addon.online ? <Badge variant="outline">Offline</Badge> : null}
                 </span>
-                <span className="row-sub">{addon.displayUrl}</span>
-                <span className="inline" style={{ marginTop: 6, gap: 6 }}>
+                {/* Redacted by the viewmodel — a configured URL is a credential. */}
+                <span className="block truncate text-sm text-muted-foreground">{addon.displayUrl}</span>
+                <span className="mt-1.5 flex flex-wrap gap-1.5">
                   {addon.resources.map((r) => (
-                    <span key={r} className="chip chip-alt">
+                    <Badge key={r} variant="secondary">
                       {r}
-                    </span>
+                    </Badge>
                   ))}
                 </span>
               </span>
-              <button
-                type="button"
-                className="btn btn-sm btn-danger"
+              <Button
+                size="xs"
+                variant="destructive"
                 onClick={() => remove.mutate(addon.id)}
                 disabled={remove.isPending}
               >
                 Remove
-              </button>
-            </div>
+              </Button>
+            </Row>
           ))}
-        </div>
+        </Rows>
       )}
     </div>
   );

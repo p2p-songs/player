@@ -1,5 +1,5 @@
-/** Small shared presentation pieces: artwork, the panel-9 states, time format. */
-import type { ReactNode } from "react";
+/** Artwork and time formatting. Layout/state blocks live in `primitives.tsx`. */
+import { ProceduralArt } from "./ProceduralArt.js";
 
 export function formatTime(ms: number | undefined): string {
   if (ms === undefined || !Number.isFinite(ms) || ms < 0) return "--:--";
@@ -9,50 +9,36 @@ export function formatTime(ms: number | undefined): string {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
-/** Cover art, falling back to a generated initial when an addon supplies none. */
-export function Artwork({ src, alt, size = 40 }: { src?: string | undefined; alt: string; size?: number }) {
-  if (src) {
-    return <img className="art" src={src} alt="" width={size} height={size} aria-hidden="true" />;
-  }
-  return (
-    <div className="art-fallback" style={{ width: size, height: size, fontSize: size * 0.4 }} aria-hidden="true">
-      {alt.trim().charAt(0).toUpperCase() || "♪"}
-    </div>
-  );
-}
-
-/** The empty/loading/error states from mockup panel 9. */
-export function StateBlock({
-  icon,
-  title,
-  message,
-  action,
+/**
+ * Cover art. Where an addon supplies none — which is most releases outside the
+ * mainstream — a composition generated from `seed` stands in. `seed` should be
+ * the release/track id rather than the title, so the same album keeps the same
+ * cover even when its title is rendered differently.
+ */
+export function Artwork({
+  src,
+  alt,
+  size = 40,
+  seed,
 }: {
-  icon: ReactNode;
-  title: string;
-  message?: string;
-  action?: ReactNode;
+  src?: string | undefined;
+  alt: string;
+  size?: number;
+  seed?: string | undefined;
 }) {
-  return (
-    <div className="state">
-      <div className="state-icon">{icon}</div>
-      <div className="state-title">{title}</div>
-      {message ? <div className="state-msg">{message}</div> : null}
-      {action}
-    </div>
-  );
+  if (src) {
+    return (
+      <img
+        className="shrink-0 border-2 border-border object-cover"
+        src={src}
+        alt=""
+        width={size}
+        height={size}
+        aria-hidden="true"
+      />
+    );
+  }
+  return <ProceduralArt seed={seed ?? alt} size={size} />;
 }
 
-export function Loading({ label = "Loading…" }: { label?: string }) {
-  return <StateBlock icon={<div className="spinner" />} title={label} />;
-}
-
-/** "Some addons didn't respond" — partial results are still worth showing. */
-export function PartialBanner({ message, danger = false }: { message: string; danger?: boolean }) {
-  return (
-    <div className={danger ? "banner banner-danger" : "banner"} role="status">
-      <span aria-hidden="true">{danger ? "⚠" : "☁"}</span>
-      <span>{message}</span>
-    </div>
-  );
-}
+export { StateBlock, Loading, PartialBanner } from "./primitives.js";

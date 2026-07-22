@@ -1,11 +1,13 @@
 /**
- * Library (mockup panel 5), minimal: liked songs from the durable library store.
- * Playlists exist in the repository and land here when playlist UI is built.
+ * Library, minimal: liked songs from the durable library store. Playlists exist
+ * in the repository and land here when playlist UI is built.
  */
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServices } from "../../app/providers.js";
 import { usePlayer } from "../viewmodels/useEngineState.js";
-import { Artwork, Loading, StateBlock } from "../components/common.js";
+import { Artwork } from "../components/common.js";
+import { Loading, PageTitle, Row, RowMain, Rows, SectionTitle, StateBlock } from "../components/primitives.js";
+import { Button } from "@/components/ui/button";
 import type { TrackRef } from "../../core/queue/types.js";
 
 export function LibraryScreen() {
@@ -26,22 +28,22 @@ export function LibraryScreen() {
   const entries = (liked.data ?? []).filter((e) => e.kind === "track");
 
   return (
-    <div className="main-inner">
-      <h1 className="page-title">Library</h1>
-      <h2 className="section-title">Liked songs</h2>
+    <div className="max-w-5xl p-8 pb-12">
+      <PageTitle className="mb-6">Library</PageTitle>
+      <SectionTitle>Liked songs</SectionTitle>
       {liked.isLoading ? (
         <Loading />
       ) : entries.length === 0 ? (
         <StateBlock icon="♡" title="No liked songs yet" message="Tap the heart on a playing song to save it here." />
       ) : (
-        <div className="rows">
+        <Rows>
           {entries.map((entry) => (
-            <div key={entry.id} className="row" style={{ cursor: "default" }}>
-              <Artwork src={entry.poster} alt={entry.name} size={38} />
+            <Row key={entry.id}>
+              <Artwork src={entry.poster} alt={entry.name} seed={entry.id} size={38} />
+              {/* The row itself isn't clickable here — it carries two actions. */}
               <button
                 type="button"
-                className="row-main"
-                style={{ border: 0, background: "transparent", textAlign: "left", padding: 0 }}
+                className="min-w-0 flex-1 text-left"
                 onClick={() =>
                   playTracks([
                     {
@@ -53,15 +55,14 @@ export function LibraryScreen() {
                   ])
                 }
               >
-                <span className="row-title">{entry.name}</span>
-                <span className="row-sub">{entry.artistName ?? "Unknown artist"}</span>
+                <RowMain title={entry.name} sub={entry.artistName ?? "Unknown artist"} />
               </button>
-              <button type="button" className="btn btn-sm" onClick={() => unlike.mutate(entry.id)}>
+              <Button size="xs" variant="outline" onClick={() => unlike.mutate(entry.id)}>
                 Remove
-              </button>
-            </div>
+              </Button>
+            </Row>
           ))}
-        </div>
+        </Rows>
       )}
     </div>
   );

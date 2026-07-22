@@ -1,7 +1,9 @@
-/** Album detail (mockup panel 4): cover, Play/Shuffle, and the track listing. */
+/** Album detail: cover, Play/Shuffle, and the track listing. */
 import { useMeta, albumToTracks } from "../viewmodels/useCatalog.js";
 import { usePlayer } from "../viewmodels/useEngineState.js";
-import { Artwork, Loading, StateBlock, formatTime } from "../components/common.js";
+import { Artwork, formatTime } from "../components/common.js";
+import { Loading, Muted, PageTitle, Row, RowIndex, RowMain, RowTime, Rows, StateBlock } from "../components/primitives.js";
+import { Button } from "@/components/ui/button";
 
 export function AlbumScreen({ albumId, onBack }: { albumId: string; onBack: () => void }) {
   const meta = useMeta("album", albumId);
@@ -10,10 +12,10 @@ export function AlbumScreen({ albumId, onBack }: { albumId: string; onBack: () =
   const totalMs = tracks.reduce((sum, t) => sum + (t.durationMs ?? 0), 0);
 
   return (
-    <div className="main-inner">
-      <button type="button" className="btn btn-sm" onClick={onBack} style={{ marginBottom: 18 }}>
+    <div className="max-w-5xl p-8 pb-12">
+      <Button size="sm" variant="outline" onClick={onBack} className="mb-5">
         ‹ Back
-      </button>
+      </Button>
 
       {meta.isLoading ? (
         <Loading label="Loading album…" />
@@ -23,45 +25,37 @@ export function AlbumScreen({ albumId, onBack }: { albumId: string; onBack: () =
           title="Couldn't load this album"
           message="No installed addon could provide its details."
           action={
-            <button type="button" className="btn btn-sm" onClick={() => meta.refetch()}>
+            <Button size="sm" onClick={() => meta.refetch()}>
               Retry
-            </button>
+            </Button>
           }
         />
       ) : (
         <>
-          <div className="inline" style={{ alignItems: "flex-end", gap: 20, marginBottom: 22 }}>
-            <Artwork src={meta.data.poster} alt={meta.data.name} size={168} />
-            <div className="stack" style={{ gap: 6 }}>
-              <h1 className="page-title" style={{ margin: 0 }}>
-                {meta.data.name}
-              </h1>
-              <div className="muted">
+          <div className="mb-6 flex items-end gap-5">
+            <Artwork src={meta.data.poster} alt={meta.data.name} seed={meta.data.id} size={168} />
+            <div className="flex flex-col gap-1.5">
+              <PageTitle>{meta.data.name}</PageTitle>
+              <Muted>
                 {meta.data.artistName ?? "Unknown artist"}
                 {meta.data.releaseDate ? ` · ${meta.data.releaseDate.slice(0, 4)}` : ""}
                 {tracks.length ? ` · ${tracks.length} tracks` : ""}
                 {totalMs ? ` · ${Math.round(totalMs / 60000)} min` : ""}
-              </div>
-              <div className="inline" style={{ marginTop: 8 }}>
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  onClick={() => playTracks(tracks)}
-                  disabled={tracks.length === 0}
-                >
+              </Muted>
+              <div className="mt-2 flex gap-2">
+                <Button onClick={() => playTracks(tracks)} disabled={tracks.length === 0}>
                   ▶ Play
-                </button>
-                <button
-                  type="button"
-                  className="btn"
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={tracks.length === 0}
                   onClick={() => {
                     setShuffle(true);
                     playTracks(tracks);
                   }}
-                  disabled={tracks.length === 0}
                 >
                   ⤨ Shuffle
-                </button>
+                </Button>
               </div>
             </div>
           </div>
@@ -69,23 +63,15 @@ export function AlbumScreen({ albumId, onBack }: { albumId: string; onBack: () =
           {tracks.length === 0 ? (
             <StateBlock icon="♪" title="No track listing" message="This addon didn't provide tracks for the album." />
           ) : (
-            <div className="rows">
+            <Rows>
               {tracks.map((track, i) => (
-                <button
-                  key={`${track.recordingId}-${i}`}
-                  type="button"
-                  className="row"
-                  onClick={() => playTracks(tracks.slice(i))}
-                >
-                  <span className="row-index">{i + 1}</span>
-                  <span className="row-main">
-                    <span className="row-title">{track.title}</span>
-                    <span className="row-sub">{track.artist ?? meta.data?.artistName ?? ""}</span>
-                  </span>
-                  <span className="row-time">{formatTime(track.durationMs)}</span>
-                </button>
+                <Row key={`${track.recordingId}-${i}`} onClick={() => playTracks(tracks.slice(i))}>
+                  <RowIndex>{i + 1}</RowIndex>
+                  <RowMain title={track.title} sub={track.artist ?? meta.data?.artistName ?? ""} />
+                  <RowTime>{formatTime(track.durationMs)}</RowTime>
+                </Row>
               ))}
-            </div>
+            </Rows>
           )}
         </>
       )}

@@ -84,6 +84,8 @@
 
   --animate-vu: vu 1s ease-in-out infinite;
   --animate-disc: disc 6s linear infinite;
+  /* Deliberately the same 6s as the disc — see the keyframes below. */
+  --animate-tonearm: tonearm 6s linear infinite;
 }
 
 /* The playing indicator, and the record turning. Both are decoration and both
@@ -101,6 +103,55 @@
 @keyframes disc {
   to {
     transform: rotate(360deg);
+  }
+}
+
+/*
+ * The tonearm's tracking wobble.
+ *
+ * **One cycle per revolution, matching `disc`'s 6s**, because that is what the
+ * real thing is: a spindle hole punched slightly off-centre swings the arm out
+ * and back exactly once per turn. A wobble on its own timing reads as a loose
+ * fitting instead — the eye can't say why, but it stops looking like a record.
+ *
+ * The stops sample `0.7·sin(2πt) + 0.25·sin(4πt)`. The second harmonic is what
+ * makes it lean: it rises quickly and falls slowly, the asymmetry of an
+ * eccentric pressing rather than a pendulum. Timing is `linear` so the sampled
+ * curve isn't eased a second time.
+ */
+@keyframes tonearm {
+  0% {
+    transform: rotate(0deg);
+  }
+  10% {
+    transform: rotate(0.65deg);
+  }
+  20% {
+    transform: rotate(0.81deg);
+  }
+  30% {
+    transform: rotate(0.52deg);
+  }
+  40% {
+    transform: rotate(0.17deg);
+  }
+  50% {
+    transform: rotate(0deg);
+  }
+  60% {
+    transform: rotate(-0.17deg);
+  }
+  70% {
+    transform: rotate(-0.52deg);
+  }
+  80% {
+    transform: rotate(-0.81deg);
+  }
+  90% {
+    transform: rotate(-0.65deg);
+  }
+  100% {
+    transform: rotate(0deg);
   }
 }
 

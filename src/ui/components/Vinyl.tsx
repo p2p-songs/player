@@ -100,30 +100,45 @@ export function Vinyl({
           // Slow and eased: a stylus is lowered, not thrown. Long enough to read
           // as a deliberate mechanism, short enough not to lag a play tap.
           transition: "transform 1100ms cubic-bezier(0.4, 0, 0.2, 1)",
-          background: "var(--chrome-muted)",
         }}
       >
+        {/*
+          The wobble is a *second* element because it is a second rotation about
+          the same bearing, and one element has one `transform`: the lift/lower
+          is a transition and the tracking wobble is a looping animation, so they
+          would overwrite each other. Nesting composes them instead, and the
+          shared `transform-origin` keeps both turning about the pivot.
+        */}
         <div
-          className="absolute rounded-full border-2 border-border"
+          className="relative size-full animate-tonearm"
           style={{
-            left: shaftWidth / 2 - weightSize / 2,
-            top: -weightSize / 2,
-            width: weightSize,
-            height: weightSize,
+            transformOrigin: `50% ${px(ARM_BACK)}px`,
+            animationPlayState: spinning ? "running" : "paused",
             background: "var(--chrome-muted)",
           }}
-        />
-        {/* Headshell — the stylus end, in accent so the eye can find where it sits. */}
-        <div
-          className="absolute border-2 border-border"
-          style={{
-            left: shaftWidth / 2 - headSize / 2,
-            bottom: -headSize * 0.35,
-            width: headSize,
-            height: headSize * 1.2,
-            background: "var(--accent)",
-          }}
-        />
+        >
+          <div
+            className="absolute rounded-full border-2 border-border"
+            style={{
+              left: shaftWidth / 2 - weightSize / 2,
+              top: -weightSize / 2,
+              width: weightSize,
+              height: weightSize,
+              background: "var(--chrome-muted)",
+            }}
+          />
+          {/* Headshell — the stylus end, in accent so the eye can find where it sits. */}
+          <div
+            className="absolute border-2 border-border"
+            style={{
+              left: shaftWidth / 2 - headSize / 2,
+              bottom: -headSize * 0.35,
+              width: headSize,
+              height: headSize * 1.2,
+              background: "var(--accent)",
+            }}
+          />
+        </div>
       </div>
 
       {/* Bearing, drawn over the shaft so the arm reads as anchored to it. */}

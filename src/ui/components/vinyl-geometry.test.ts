@@ -11,6 +11,7 @@ import {
   BOX_WIDTH,
   LABEL_RADIUS,
   RIM_RADIUS,
+  WOBBLE_PEAK,
   counterweightPosition,
   needlePosition,
   needleRadius,
@@ -18,9 +19,12 @@ import {
 
 describe("tonearm geometry", () => {
   it("drops the needle in the grooves, not on the label or past the rim", () => {
-    const r = needleRadius(ANGLE_PLAYING);
-    expect(r).toBeGreaterThan(LABEL_RADIUS);
-    expect(r).toBeLessThan(RIM_RADIUS);
+    // Across the whole tracking wobble, not just at rest in the middle of it.
+    for (const angle of [ANGLE_PLAYING - WOBBLE_PEAK, ANGLE_PLAYING, ANGLE_PLAYING + WOBBLE_PEAK]) {
+      const r = needleRadius(angle);
+      expect(r).toBeGreaterThan(LABEL_RADIUS);
+      expect(r).toBeLessThan(RIM_RADIUS);
+    }
   });
 
   it("parks clear of the record", () => {

@@ -365,8 +365,14 @@ The app is a React/Vite shell at `index.html` → `src/app/main.tsx`.
   (0.18) and the rim (0.50) when playing, and outside the rim when parked. Change
   `ARM_LENGTH` or the pivot and those have to be re-solved — the test is what
   says so, because a needle hovering over the label typechecks and builds fine.
-  The arm is one rotating element carrying counterweight, shaft and headshell:
-  three elements animated in parallel drift apart at the edges of the easing.
+  The assembly is one rotating element carrying counterweight, shaft and
+  headshell: three animated in parallel drift apart at the edges of the easing.
+  **The tracking wobble is a second nested element** — one element has one
+  `transform`, and the lift/lower is a *transition* while the wobble is a looping
+  *animation*, so they overwrite each other unless composed by nesting (shared
+  `transform-origin` keeps both about the bearing). Its period is deliberately
+  the same 6s as `disc`: an off-centre spindle hole swings the arm once per
+  revolution, and a wobble on its own timing reads as a loose fitting instead.
 - **Deliberately not built:** router (nav is a stack in the UI store — browser
   Back still exits the app), source-picker modal, Playlists tab,
   responsive/mobile layout.

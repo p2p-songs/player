@@ -27,6 +27,14 @@ export const BOX_WIDTH = 1.26;
 export const ANGLE_PLAYING = 26;
 export const ANGLE_PARKED = -6;
 
+/**
+ * Peak of the tracking wobble, in degrees either side of `ANGLE_PLAYING` — the
+ * largest stop in the `tonearm` keyframes (`globals.css`). The playing angle has
+ * to hold with this added *and* subtracted, so the wobble can never walk the
+ * needle onto the label or over the rim.
+ */
+export const WOBBLE_PEAK = 0.81;
+
 /** The label, from `inset: 32%` — nothing should track inside this. */
 export const LABEL_RADIUS = 0.18;
 export const RIM_RADIUS = 0.5;

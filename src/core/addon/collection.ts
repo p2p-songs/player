@@ -1,10 +1,12 @@
 /**
  * `AddonCollection` — the set of installed addons (ARCHITECTURE §3, §11). This
  * is the player's addon *collection*: install by pasting a manifest URL, remove,
- * enumerate. It owns **no default/bundled addon** — installation is exclusively
- * "user provides a manifest URL" (the neutrality invariant, §11). Configured
- * (credential-bearing) manifest URLs are held only inside the `AddonClient` and
- * never logged (§6a).
+ * enumerate. It bundles **no stream addon and no credentials** — the neutrality
+ * invariant (§11) governs the stream plane. Every install, including the app
+ * layer's one default *metadata* addon (`app/default-addons.ts`), comes through
+ * `install(manifestUrl)`; this class has no notion of a default and treats them
+ * all alike. Configured (credential-bearing) manifest URLs are held only inside
+ * the `AddonClient` and never logged (§6a).
  *
  * It provides the two plane-specific views the rest of the engine needs:
  * - `streamProviders()` → feeds the resolution **command plane** (`AddonStreamResolver`).

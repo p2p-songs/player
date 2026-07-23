@@ -1,13 +1,17 @@
 /**
- * Addon collection view-models. Installation is **exclusively** "user provides a
- * manifest URL" — the player bundles and default-installs nothing (§11
- * neutrality). Saved addons are re-installed into the in-memory collection on
- * boot; a configured URL is credential-bearing, so the UI only ever renders it
- * through `redactManifestUrl` (§6a).
+ * Addon collection view-models. **Stream** addons are installed exclusively by a
+ * user pasting a manifest URL — the player bundles no stream source and no
+ * credentials (§11 neutrality). The *one* exception is a default **metadata**
+ * addon (`app/default-addons.ts`): public catalogue data, no sources, seeded
+ * once through this same install path (not baked into the engine), which is why
+ * it doesn't touch neutrality. Saved addons are re-installed into the in-memory
+ * collection on boot; a configured URL is credential-bearing, so the UI only
+ * ever renders it through `redactManifestUrl` (§6a).
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServices } from "../../app/providers.js";
 import { redactManifestUrl } from "../../core/persistence/index.js";
+import { DEFAULT_METADATA_ADDON_URL, seedDefaultMetadataAddon } from "../../app/default-addons.js";
 import type { Resource } from "@p2p-songs/protocol";
 
 export interface InstalledAddonView {
@@ -33,6 +37,11 @@ export function useInstalledAddons() {
   return useQuery({
     queryKey: ADDONS_KEY,
     queryFn: async (): Promise<InstalledAddonView[]> => {
+      // Seed the default metadata addon once (no-op after the first success, or
+      // if the user has removed it) before listing, so it appears on first boot.
+      if (DEFAULT_METADATA_ADDON_URL) {
+        await seedDefaultMetadataAddon(collection, repository, { url: DEFAULT_METADATA_ADDON_URL });
+      }
       const saved = await repository.listAddons();
       const views: InstalledAddonView[] = [];
       for (const record of saved) {

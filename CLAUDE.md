@@ -25,10 +25,14 @@ starting work. The registry owns current sign-off and supersession; do not rely
 only on issue notifications.
 
 ## Invariants this repo must hold (see `.github`'s `docs/REVIEW_CHECKLIST.md` §1, §7, §8 and `docs/ARCHITECTURE.md` §11)
-- Never bundle, default-install, or hardcode any specific stream addon
-  (including `stream-debrid`). Addon installation is exclusively "user
-  pastes a manifest URL." This is what keeps this repo as neutral as
-  Stremio-the-app.
+- Never bundle, default-install, or hardcode any specific **stream** addon
+  (including `stream-debrid`), and never bundle credentials — neutrality
+  governs the *stream plane*. Stream addons are installed exclusively by the
+  user pasting a manifest URL. **One exception:** a default *metadata* addon
+  (MusicBrainz catalogue — public data, no sources) may be seeded, through the
+  ordinary `install(manifestUrl)` path, once, with removal respected. See
+  `app/default-addons.ts` and ARCHITECTURE §11. This is what keeps this repo as
+  neutral as Stremio-the-app (which likewise bundles only Cinemeta).
 - The player never has its own debrid account and never bundles credentials.
   BUT a *configured* addon's manifest URL contains the user's debrid key, and
   the player necessarily holds it — so configured URLs are treated as secrets

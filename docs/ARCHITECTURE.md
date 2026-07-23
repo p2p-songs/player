@@ -1111,9 +1111,18 @@ databases upgrade).
 [`REVIEW_CHECKLIST.md`](https://github.com/p2p-songs/.github/blob/main/docs/REVIEW_CHECKLIST.md)
 §1/§7/§8 for the player specifically.)
 
-- **Neutrality:** still no bundled/default-installed stream addon; addons are
-  added only by user-pasted manifest URL. The player never has its *own*
-  debrid account and never ships credentials. (Unchanged from master plan §3.)
+- **Neutrality:** still no bundled/default-installed **stream** addon, and no
+  bundled credentials — neutrality governs the *stream plane*. Stream addons are
+  added only by user-pasted manifest URL; the player never has its *own* debrid
+  account. A **metadata** addon is the one permitted default: a MusicBrainz
+  catalogue is public reference data (entity-typed ids, names, posters — no
+  hashes, no sources), so pre-installing one cannot steer anyone to a content
+  source. It is seeded through the *same* `AddonCollection.install(manifestUrl)`
+  path (no engine-baked search, no addon package at runtime — so "the player
+  depends on no addon at runtime" still holds), once, and a user's removal
+  sticks. The URL is deployment config (`VITE_DEFAULT_METADATA_ADDON_URL`); unset
+  seeds nothing. See `app/default-addons.ts`. (Refines master plan §3 — the
+  stream-plane rule is unchanged.)
 - **Configured addon URLs are secrets, handled under a real browser threat
   model (§6a):** the player *does* hold the user's key inside the configured
   manifest URL — unavoidable if it's to call the addon — so it's stored in a

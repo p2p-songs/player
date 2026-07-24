@@ -17,7 +17,7 @@
  *   command plane needs to live in the engine, because it is scheduler-owned.
  */
 import type { ContentType, MetaDetail, MetaPreview } from "@p2p-songs/protocol";
-import { AddonClient, type AddonClientOptions } from "./client.js";
+import { AddonClient, type AddonClientOptions, type CatalogStats } from "./client.js";
 import { AddonUnreachableError, isProviderDown } from "./http.js";
 import { askBounded, neverAbort, DEFAULT_PROVIDER_TIMEOUT_MS } from "./fan-out.js";
 
@@ -66,6 +66,26 @@ export class AddonCollection {
   /** Addons that serve `/stream` — the resolver's provider set. */
   streamProviders(): AddonClient[] {
     return this.clients.filter((c) => c.supports("stream"));
+  }
+
+  /**
+   * Aggregate public catalogue counts across every catalog addon that exposes
+   * `/stats` — how much music is searchable, for the "X songs · Y albums · Z
+   * artists indexed" awareness indicator. `undefined` when none report stats (so
+   * the UI simply shows nothing rather than a misleading zero). Best-effort: a
+   * provider without `/stats` contributes nothing; only an abort propagates.
+   */
+  async catalogStats(signal?: AbortSignal): Promise<CatalogStats | undefined> {
+    const providers = this.clients.filter((c) => c.supports("catalog"));
+    const results = await Promise.all(providers.map((c) => c.getCatalogStats(signal)));
+    const present = results.filter((r): r is CatalogStats => r !== undefined);
+    if (present.length === 0) return undefined;
+    return present.reduce((acc, s) => ({
+      artists: acc.artists + s.artists,
+      albums: acc.albums + s.albums,
+      tracks: acc.tracks + s.tracks,
+      total: acc.total + s.total,
+    }));
   }
 
   /**

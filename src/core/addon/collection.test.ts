@@ -343,3 +343,30 @@ describe("AddonCollection.catalogById", () => {
     ]);
   });
 });
+
+describe("AddonCollection.catalogStats", () => {
+  const catalogManifest = (id: string): Manifest =>
+    manifest({ id, resources: ["catalog"], types: ["artist", "album", "track"], idPrefixes: ["mbid:"] });
+
+  it("sums /stats across catalog addons that report them", async () => {
+    const http = new FakeHttp();
+    const collection = new AddonCollection({ httpGet: http.get });
+    const aUrl = serve(http, "https://a.example", catalogManifest("a"));
+    const bUrl = serve(http, "https://b.example", catalogManifest("b"));
+    http.on("https://a.example/stats", () => ({ status: 200, body: { artist: 10, album: 20, track: 30, total: 60 } }));
+    // b is a catalog addon that doesn't implement /stats (404) → contributes nothing.
+    http.on("https://b.example/stats", () => ({ status: 404, body: {} }));
+    await collection.install(aUrl);
+    await collection.install(bUrl);
+
+    await expect(collection.catalogStats()).resolves.toEqual({ artists: 10, albums: 20, tracks: 30, total: 60 });
+  });
+
+  it("returns undefined when no catalog addon reports stats", async () => {
+    const http = new FakeHttp();
+    const collection = new AddonCollection({ httpGet: http.get });
+    const aUrl = serve(http, "https://a.example", manifest({ id: "a", resources: ["stream"] }));
+    await collection.install(aUrl);
+    await expect(collection.catalogStats()).resolves.toBeUndefined();
+  });
+});

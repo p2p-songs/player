@@ -59,6 +59,16 @@ export function manifestUrl(base: AddonBase): string {
   return `${base}${MANIFEST_SUFFIX}`;
 }
 
+/**
+ * The `/stats` URL for a base — a **root** endpoint at the addon's origin, not
+ * under any config segment (it exposes only public catalogue counts, never
+ * anything credential-bearing). Optional: an addon that doesn't implement it just
+ * 404s, which the client treats as "no stats".
+ */
+export function statsUrl(base: AddonBase): string {
+  return `${new URL(base).origin}/stats`;
+}
+
 export interface ResourceRoute {
   resource: "catalog" | "meta" | "stream" | "lyrics";
   /** Content type segment, e.g. `track`, `artist`, `album`, `playlist`. */

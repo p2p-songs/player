@@ -73,6 +73,27 @@ export function useArtistAlbums(artistId: string | undefined) {
   });
 }
 
+/**
+ * How much music is searchable, across every catalog addon that reports it — for
+ * the "X songs · Y albums · Z artists indexed" awareness line. The catalogue is
+ * curated (popular/official), not all of recorded music, so telling the user its
+ * size sets the right expectation up front. `undefined` when no addon reports
+ * stats; the UI then shows nothing rather than a misleading zero. Counts move
+ * only on a nightly reindex, so this is cached long and never refetched on focus.
+ */
+export function useCatalogStats(enabled: boolean) {
+  const { collection } = useServices();
+  return useQuery({
+    queryKey: ["catalog-stats"],
+    enabled,
+    staleTime: 60 * 60 * 1000,
+    gcTime: 24 * 60 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    retry: false,
+    queryFn: ({ signal }) => collection.catalogStats(signal),
+  });
+}
+
 /** Full detail for one item (album track listing, artist page, …). */
 export function useMeta(type: ContentType, id: string | undefined) {
   const { collection } = useServices();

@@ -1125,11 +1125,15 @@ databases upgrade).
   stream-plane rule is unchanged.)
   - **The default metadata addon now serves a *curated* catalogue** (Meilisearch,
     built offline from MusicBrainz; see `.github/docs/CATALOG_PIPELINE.md`), not
-    all of recorded music. Two player-side increments follow (pending): a **single
-    unified search** over artists/albums/songs (one box, not per-type), and a
-    **catalogue-scope indicator** — "X songs · Y albums · Z artists indexed" from
-    the addon's counts — so users understand the catalogue is curated. Neutrality
-    and the runtime-addon-independence guarantee are unaffected.
+    all of recorded music. Both player-side increments are **done**: a **single
+    unified search** over artists/albums/songs (`useUnifiedSearch`, one box, not
+    per-type), and a **catalogue-scope indicator** — "X songs · Y albums · Z
+    artists indexed" — rendered under the search box from the addon's `/stats`
+    (`AddonClient.getCatalogStats` → `AddonCollection.catalogStats` →
+    `useCatalogStats`), so users understand the catalogue is curated. `/stats` is a
+    generic, source-free capability (only public counts), so it doesn't touch
+    neutrality or the runtime-addon-independence guarantee; an addon that doesn't
+    implement it just yields no indicator.
 - **Configured addon URLs are secrets, handled under a real browser threat
   model (§6a):** the player *does* hold the user's key inside the configured
   manifest URL — unavoidable if it's to call the addon — so it's stored in a

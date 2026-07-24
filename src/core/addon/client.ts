@@ -36,6 +36,7 @@ import {
   addonBaseFromManifestUrl,
   manifestUrl as manifestUrlOf,
   resourceUrl,
+  statsUrl,
   type AddonBase,
   type ResourceRoute,
 } from "./endpoints.js";
@@ -48,6 +49,19 @@ import { getJson, defaultHttpGet, AddonProtocolError, AddonUnreachableError, typ
  */
 interface Validator<T> {
   safeParse(data: unknown): { success: true; data: T } | { success: false };
+}
+
+/**
+ * Public catalogue counts an addon may expose at `/stats` (a curated catalogue is
+ * finite, so the player can tell the user how much is searchable). A generic,
+ * source-free capability — not every addon implements it.
+ */
+export interface CatalogStats {
+  artists: number;
+  albums: number;
+  tracks: number;
+  /** artists + albums + tracks. */
+  total: number;
 }
 
 /** Diagnostics for a request *we* built that the addon rejected as a 4xx (not an outage). */
@@ -136,6 +150,30 @@ export class AddonClient {
     return res?.metas ?? [];
   }
 
+  /**
+   * `/stats` — the addon's public catalogue counts, or `undefined` if it doesn't
+   * offer them. Best-effort by design: a non-catalog addon, a 404/503, an
+   * unreachable host, or a malformed body all resolve to `undefined` (never an
+   * error), because a missing size indicator must not break anything. Only an
+   * abort propagates.
+   */
+  async getCatalogStats(signal?: AbortSignal): Promise<CatalogStats | undefined> {
+    if (!this.supports("catalog")) return undefined;
+    let res;
+    try {
+      res = await this.httpGet(statsUrl(this.base), { ...(signal ? { signal } : {}) });
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") throw err;
+      return undefined;
+    }
+    if (res.status !== 200) return undefined;
+    try {
+      return parseCatalogStats(await res.json());
+    } catch {
+      return undefined;
+    }
+  }
+
   /** `/lyrics` for a recording. */
   async getLyrics(req: LyricsRequest, signal?: AbortSignal): Promise<Lyric[]> {
     const extra = req.trackId ? { trackId: req.trackId } : undefined;
@@ -161,6 +199,23 @@ export class AddonClient {
     if (!parsed.success) throw new AddonProtocolError(`${resource} response failed validation`);
     return parsed.data;
   }
+}
+
+/**
+ * Validate an untrusted `/stats` body into {@link CatalogStats}, or `undefined`.
+ * musicmeta reports singular keys (`{artist, album, track, total}`); we map to the
+ * player's plural shape and require every count to be a finite number.
+ */
+function parseCatalogStats(body: unknown): CatalogStats | undefined {
+  if (typeof body !== "object" || body === null) return undefined;
+  const b = body as Record<string, unknown>;
+  const num = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
+  const artists = num(b.artist);
+  const albums = num(b.album);
+  const tracks = num(b.track);
+  const total = num(b.total);
+  if (artists === undefined || albums === undefined || tracks === undefined || total === undefined) return undefined;
+  return { artists, albums, tracks, total };
 }
 
 /** Build the `<extra>` record for a stream request from its optional album-context ids. */

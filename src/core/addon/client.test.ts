@@ -20,6 +20,19 @@ const streamManifest: Manifest = {
   catalogs: [],
 };
 
+const STATS_URL = "https://addon.example/stats";
+
+const catalogManifest: Manifest = {
+  id: "com.test.catalog",
+  version: "1.0.0",
+  name: "Test Catalog",
+  description: "",
+  resources: ["catalog", "meta"],
+  types: ["artist", "album", "track"],
+  idPrefixes: ["mbid:"],
+  catalogs: [],
+};
+
 function serveManifest(http: FakeHttp, manifest: Manifest): FakeHttp {
   return http.on(MANIFEST_URL, () => ({ status: 200, body: manifest }));
 }
@@ -152,5 +165,47 @@ describe("AddonClient.getMeta", () => {
     const http = serveManifest(new FakeHttp(), metaManifest);
     const client = await AddonClient.install(MANIFEST_URL, { httpGet: http.get });
     await expect(client.getMeta("artist", ARTIST)).resolves.toBeUndefined();
+  });
+});
+
+describe("AddonClient.getCatalogStats", () => {
+  it("returns the mapped counts from /stats (singular keys → plural)", async () => {
+    const http = serveManifest(new FakeHttp(), catalogManifest).on(STATS_URL, () => ({
+      status: 200,
+      body: { artist: 993, album: 144419, track: 756483, total: 901895 },
+    }));
+    const client = await AddonClient.install(MANIFEST_URL, { httpGet: http.get });
+    await expect(client.getCatalogStats()).resolves.toEqual({
+      artists: 993,
+      albums: 144419,
+      tracks: 756483,
+      total: 901895,
+    });
+  });
+
+  it("is undefined for a non-catalog addon (never even requests /stats)", async () => {
+    const http = serveManifest(new FakeHttp(), streamManifest);
+    const client = await AddonClient.install(MANIFEST_URL, { httpGet: http.get });
+    await expect(client.getCatalogStats()).resolves.toBeUndefined();
+    expect(http.requests).not.toContain(STATS_URL);
+  });
+
+  it("is undefined (never throws) when /stats is 503, 404, or a malformed body", async () => {
+    for (const reply of [
+      { status: 503, body: { error: "no index" } },
+      { status: 404, body: { err: "not found" } },
+      { status: 200, body: { artist: "lots" } }, // wrong type → rejected
+      { status: 200, body: { artist: 1 } }, // missing keys → rejected
+    ]) {
+      const http = serveManifest(new FakeHttp(), catalogManifest).on(STATS_URL, () => reply);
+      const client = await AddonClient.install(MANIFEST_URL, { httpGet: http.get });
+      await expect(client.getCatalogStats()).resolves.toBeUndefined();
+    }
+  });
+
+  it("is undefined when the host is unreachable (best-effort, not an outage)", async () => {
+    const http = serveManifest(new FakeHttp(), catalogManifest).fail((u) => u === STATS_URL);
+    const client = await AddonClient.install(MANIFEST_URL, { httpGet: http.get });
+    await expect(client.getCatalogStats()).resolves.toBeUndefined();
   });
 });

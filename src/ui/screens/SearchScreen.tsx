@@ -12,7 +12,7 @@
  */
 import type { MetaPreview } from "@p2p-songs/protocol";
 import { useUi } from "../../app/store.js";
-import { useUnifiedSearch, isUnreachable, previewToTrack } from "../viewmodels/useCatalog.js";
+import { useUnifiedSearch, useCatalogStats, isUnreachable, previewToTrack } from "../viewmodels/useCatalog.js";
 import { usePlayer } from "../viewmodels/useEngineState.js";
 import { useInstalledAddons } from "../viewmodels/useAddons.js";
 import { useDebounced } from "../viewmodels/useDebounced.js";
@@ -22,6 +22,7 @@ import {
   Loading,
   PageTitle,
   PartialBanner,
+  Muted,
   Row,
   RowMain,
   RowTime,
@@ -81,6 +82,8 @@ export function SearchScreen({
           </Button>
         ) : null}
       </div>
+
+      <CatalogSize enabled={hasCatalogAddon} />
 
       {hasCatalogAddon && !hasStreamAddon ? (
         <div className="mt-5">
@@ -152,6 +155,27 @@ export function SearchScreen({
           />
         </>
       )}
+    </div>
+  );
+}
+
+/**
+ * The searchable catalogue's size — "X songs · Y albums · Z artists indexed".
+ * The default catalogue is curated (popular/official), not all of recorded
+ * music, so stating its size up front sets the right expectation instead of
+ * letting a missing niche track read as a bug. Renders nothing until (and unless)
+ * a catalog addon reports counts, so it never shows a misleading zero or a
+ * flash of "0 songs" while loading.
+ */
+function CatalogSize({ enabled }: { enabled: boolean }) {
+  const { data: stats } = useCatalogStats(enabled);
+  if (!stats || stats.total === 0) return null;
+  const n = (v: number) => v.toLocaleString();
+  return (
+    <div className="mt-3">
+      <Muted>
+        {n(stats.tracks)} songs · {n(stats.albums)} albums · {n(stats.artists)} artists indexed
+      </Muted>
     </div>
   );
 }

@@ -1123,6 +1123,13 @@ databases upgrade).
   sticks. The URL is deployment config (`VITE_DEFAULT_METADATA_ADDON_URL`); unset
   seeds nothing. See `app/default-addons.ts`. (Refines master plan §3 — the
   stream-plane rule is unchanged.)
+  - **The default metadata addon now serves a *curated* catalogue** (Meilisearch,
+    built offline from MusicBrainz; see `.github/docs/CATALOG_PIPELINE.md`), not
+    all of recorded music. Two player-side increments follow (pending): a **single
+    unified search** over artists/albums/songs (one box, not per-type), and a
+    **catalogue-scope indicator** — "X songs · Y albums · Z artists indexed" from
+    the addon's counts — so users understand the catalogue is curated. Neutrality
+    and the runtime-addon-independence guarantee are unaffected.
 - **Configured addon URLs are secrets, handled under a real browser threat
   model (§6a):** the player *does* hold the user's key inside the configured
   manifest URL — unavoidable if it's to call the addon — so it's stored in a

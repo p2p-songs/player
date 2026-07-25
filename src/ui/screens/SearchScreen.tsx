@@ -7,8 +7,9 @@
  * a song together — so making them pick a category first asks a question they
  * can't answer yet. Results are merged into one relevance-ordered list (see
  * `mergeByRelevance`) so the single best hit leads whatever its type; each row
- * carries a type label so a song, an album, and an artist still read apart at a
- * glance. That's what makes both "taylor swift" (you want the artist) and
+ * leads with its kind (woven into the subtitle) and a matching artwork shape, so a
+ * song, an album, and an artist read apart at a glance. That's what makes both
+ * "taylor swift" (you want the artist) and
  * "bohemian rhapsody" (you want the song) land without a click.
  */
 import type { MetaPreview } from "@p2p-songs/protocol";
@@ -32,7 +33,6 @@ import {
 } from "../components/primitives.js";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 
 const EXAMPLES = ["taylor swift", "you seem sad for a girl in love", "bohemian rhapsody"];
 
@@ -169,16 +169,14 @@ function CatalogSize({ enabled }: { enabled: boolean }) {
   );
 }
 
-/** Human label for a result's content type — the badge every row wears. */
-const TYPE_LABEL: Record<string, string> = { track: "Song", album: "Album", artist: "Artist", playlist: "Playlist" };
-
 /**
- * One row in the merged, relevance-ordered results. Because the list mixes types,
- * each row wears a **type label** (Song / Album / Artist) so its kind is legible
- * without hovering — the affordances still reinforce it (a song plays, its artwork
- * carrying a play badge on hover; an artist or album opens, with a chevron and, for
- * an artist, circular artwork), but the label is what makes a mixed list readable
- * at a glance and tells apart same-named results of different kinds.
+ * One row in the merged, relevance-ordered results. The list mixes types, so each
+ * row leads with its **kind woven into the subtitle** — "Song · <artist>",
+ * "Album · <artist>", "Artist" — which is where the eye already goes, so kind is
+ * legible top-to-bottom without hunting a trailing badge. The **artwork shape**
+ * reinforces it: an artist is a circle (reads as a person), an album is a stacked
+ * square (a collection), a song is a plain square with a play badge. Only the
+ * drill-in kinds (artist, album) carry a chevron; a song plays in place.
  */
 function ResultRow({
   item,
@@ -193,28 +191,49 @@ function ResultRow({
 }) {
   const isTrack = item.type === "track";
   const isArtist = item.type === "artist";
+  const isAlbum = item.type === "album";
   const onClick = isTrack
     ? () => onPlay(item)
     : isArtist
       ? () => onOpenArtist(item.id, item.name)
       : () => onOpenAlbum(item.id, item.name);
+  const artist = item.description ?? "Unknown artist";
+  const sub = isArtist ? "Artist" : isTrack ? `Song · ${artist}` : `Album · ${artist}`;
   return (
     <Row onClick={onClick}>
       {isTrack ? (
         <PlayableArtwork src={item.poster} alt={item.name} seed={item.id} size={38} />
+      ) : isAlbum ? (
+        <AlbumArtwork src={item.poster} alt={item.name} seed={item.id} />
       ) : (
-        <Artwork src={item.poster} alt={item.name} seed={item.id} size={38} round={isArtist} />
+        <Artwork src={item.poster} alt={item.name} seed={item.id} size={38} round />
       )}
-      {/* An artist row is only an id and a name — a subtitle would be noise. */}
-      <RowMain title={item.name} sub={isArtist ? undefined : (item.description ?? "Unknown artist")} />
-      <div className="flex shrink-0 items-center gap-2">
-        <Badge variant="secondary">{TYPE_LABEL[item.type] ?? item.type}</Badge>
-        {isTrack ? null : (
-          <RowTime>
-            <ChevronRightIcon className="size-4" />
-          </RowTime>
-        )}
-      </div>
+      <RowMain title={item.name} sub={sub} />
+      {isTrack ? null : (
+        <RowTime>
+          <ChevronRightIcon className="size-4" />
+        </RowTime>
+      )}
     </Row>
+  );
+}
+
+/**
+ * Album artwork with a **stacked** silhouette — a second card peeking behind the
+ * cover — so an album reads as a collection at a glance, distinct from a song's
+ * single square. Purely decorative; the real cover paints on top.
+ */
+function AlbumArtwork({ src, alt, seed }: { src?: string; alt: string; seed?: string }) {
+  return (
+    <span className="relative shrink-0" style={{ width: 38, height: 38 }}>
+      <span
+        aria-hidden
+        className="absolute -right-1 -top-1 rounded-[2px] border-2 border-border bg-muted"
+        style={{ width: 38, height: 38 }}
+      />
+      <span className="relative block">
+        <Artwork src={src} alt={alt} seed={seed} size={38} />
+      </span>
+    </span>
   );
 }

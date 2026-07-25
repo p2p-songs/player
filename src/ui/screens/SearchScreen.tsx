@@ -27,14 +27,10 @@ import {
   RowMain,
   RowTime,
   Rows,
-  SectionTitle,
   StateBlock,
 } from "../components/primitives.js";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-
-/** Enough to recognise the right one, few enough not to bury the songs. */
-const PRECISE_LIMIT = 4;
 
 const EXAMPLES = ["taylor swift", "you seem sad for a girl in love", "bohemian rhapsody"];
 
@@ -61,7 +57,7 @@ export function SearchScreen({
   const settling = query.trim() !== settledQuery.trim();
 
   const results = search.data;
-  const total = results ? results.artists.length + results.albums.length + results.tracks.length : 0;
+  const total = results?.length ?? 0;
 
   return (
     <div className="p-8 pb-12">
@@ -132,28 +128,19 @@ export function SearchScreen({
       ) : total === 0 ? (
         <StateBlock icon="◎" title="No results found" message="Try different keywords." />
       ) : (
-        <>
-          <ResultSection
-            title="Artists"
-            kind="artist"
-            items={results!.artists.slice(0, PRECISE_LIMIT)}
-            onOpen={(item) => onOpenArtist(item.id, item.name)}
-            // An artist row is only an id and a name — a subtitle would be noise.
-            showSub={false}
-          />
-          <ResultSection
-            title="Albums"
-            kind="album"
-            items={results!.albums.slice(0, PRECISE_LIMIT)}
-            onOpen={(item) => onOpenAlbum(item.id, item.name)}
-          />
-          <ResultSection
-            title="Songs"
-            kind="track"
-            items={results!.tracks}
-            onOpen={(item) => playTracks([previewToTrack(item)])}
-          />
-        </>
+        <div className="mt-6">
+          <Rows>
+            {results!.map((item) => (
+              <ResultRow
+                key={item.id}
+                item={item}
+                onOpenArtist={onOpenArtist}
+                onOpenAlbum={onOpenAlbum}
+                onPlay={(track) => playTracks([previewToTrack(track)])}
+              />
+            ))}
+          </Rows>
+        </div>
       )}
     </div>
   );
@@ -181,50 +168,44 @@ function CatalogSize({ enabled }: { enabled: boolean }) {
 }
 
 /**
- * `kind` decides the row's affordance, not just its icon: songs play, so their
- * artwork carries a play badge on hover; artists and albums open, so they get a
- * chevron, and artists are circular. See {@link PlayableArtwork}.
+ * One row in the merged, relevance-ordered results. The item's **type** decides
+ * its affordance, not a section header: a song plays (its artwork carries a play
+ * badge on hover, no chevron); an artist or album opens (a chevron, and the
+ * artist's artwork is circular). This is the same row vocabulary used across the
+ * app, so a mixed list still reads at a glance which rows play and which drill in.
  */
-function ResultSection({
-  title,
-  kind,
-  items,
-  onOpen,
-  showSub = true,
+function ResultRow({
+  item,
+  onOpenArtist,
+  onOpenAlbum,
+  onPlay,
 }: {
-  title: string;
-  kind: "artist" | "album" | "track";
-  items: MetaPreview[];
-  onOpen: (item: MetaPreview) => void;
-  showSub?: boolean;
+  item: MetaPreview;
+  onOpenArtist: (id: string, name: string) => void;
+  onOpenAlbum: (id: string, name: string) => void;
+  onPlay: (item: MetaPreview) => void;
 }) {
-  if (items.length === 0) return null;
+  const isTrack = item.type === "track";
+  const isArtist = item.type === "artist";
+  const onClick = isTrack
+    ? () => onPlay(item)
+    : isArtist
+      ? () => onOpenArtist(item.id, item.name)
+      : () => onOpenAlbum(item.id, item.name);
   return (
-    <>
-      <SectionTitle>{title}</SectionTitle>
-      <Rows>
-        {items.map((item) => (
-          <Row key={item.id} onClick={() => onOpen(item)}>
-            {kind === "track" ? (
-              <PlayableArtwork src={item.poster} alt={item.name} seed={item.id} size={38} />
-            ) : (
-              <Artwork
-                src={item.poster}
-                alt={item.name}
-                seed={item.id}
-                size={38}
-                round={kind === "artist"}
-              />
-            )}
-            <RowMain title={item.name} sub={showSub ? (item.description ?? "Unknown artist") : undefined} />
-            {kind === "track" ? null : (
-              <RowTime>
-                <ChevronRightIcon className="size-4" />
-              </RowTime>
-            )}
-          </Row>
-        ))}
-      </Rows>
-    </>
+    <Row onClick={onClick}>
+      {isTrack ? (
+        <PlayableArtwork src={item.poster} alt={item.name} seed={item.id} size={38} />
+      ) : (
+        <Artwork src={item.poster} alt={item.name} seed={item.id} size={38} round={isArtist} />
+      )}
+      {/* An artist row is only an id and a name — a subtitle would be noise. */}
+      <RowMain title={item.name} sub={isArtist ? undefined : (item.description ?? "Unknown artist")} />
+      {isTrack ? null : (
+        <RowTime>
+          <ChevronRightIcon className="size-4" />
+        </RowTime>
+      )}
+    </Row>
   );
 }

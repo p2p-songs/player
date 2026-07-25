@@ -295,8 +295,13 @@ The app is a React/Vite shell at `index.html` → `src/app/main.tsx`.
 - **Search is one box, debounced (2026-07-22).** No type tabs — people type
   "justin bieber baby", an artist *and* a song, so making them pick a category
   first asks a question they can't answer. `useUnifiedSearch` fans out to all
-  three types and sections the results (artists/albums capped, songs in full);
-  one type failing doesn't fail the search, only a clean sweep does.
+  three types and merges them into **one relevance-ordered list** (sectioning
+  buried the obvious hit — a song-title query pushed the song below every album
+  pressing sharing its name). The merge sorts by each hit's `rankingScore`
+  (Meili relevance, forwarded by musicmeta as an optional `metaPreview` field);
+  equal scores break **artist → track → album** (an artist tops the score only
+  when the query names it; below that a search box wants to play). One type
+  failing doesn't fail the search, only a clean sweep does.
   **`useDebounced` is load-bearing, not polish.** Search had no debounce and got
   away with it at one request per keystroke; three per keystroke turned an
   18-character phrase into **54 requests**, and against MusicBrainz's 1 req/sec

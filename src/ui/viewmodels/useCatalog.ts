@@ -20,25 +20,38 @@ export function useSearch(type: ContentType, query: string, enabled: boolean) {
   });
 }
 
-export interface UnifiedResults {
-  artists: MetaPreview[];
-  albums: MetaPreview[];
-  tracks: MetaPreview[];
-}
-
 const SEARCH_TYPES = ["artist", "album", "track"] as const;
 
+/** Max merged results to show — the per-type searches return up to 25 each. */
+const MERGED_LIMIT = 40;
+
 /**
- * One search across every content type.
+ * Tie-break order when two hits are *equally* relevant (Meilisearch gives every
+ * equally-good match the same score). Artist first: an artist's only searchable
+ * text is its name, so it reaches the top score **only when the query is that
+ * name** — i.e. an artist query, where the artist is the answer. Below that a
+ * search box wants to play, so track beats album (a song title query shouldn't
+ * surface the album pressings above the song).
+ */
+const TYPE_PRIORITY: Record<string, number> = { artist: 0, track: 1, album: 2, playlist: 3 };
+
+/**
+ * One search across every content type, merged into a **single relevance-ordered
+ * list**.
  *
  * People type "justin bieber baby" — an artist *and* a song — so asking them to
- * pick a category first is asking them to answer a question they don't have an
- * answer to. The protocol is typed per catalog, so the three searches still go
- * out separately; the merge happens here, and the caller sections the results.
+ * pick a category first is asking a question they can't answer, and *sectioning*
+ * by type buries the obvious hit (searching a song title pushes the song below
+ * every album pressing that shares its name). The protocol is typed per catalog,
+ * so the three searches still go out separately, but each hit carries the addon's
+ * `rankingScore` (Meilisearch relevance), so we merge them into one list ordered
+ * by that score — the single most relevant item first, whatever its type. Equal
+ * scores break by {@link TYPE_PRIORITY} (artist, then track, then album). When an
+ * addon doesn't report a score everything is 0, so the tie-break alone orders it.
  */
 export function useUnifiedSearch(query: string, enabled: boolean) {
   const { collection } = useServices();
-  return useQuery<UnifiedResults>({
+  return useQuery<MetaPreview[]>({
     queryKey: ["search", query],
     enabled: enabled && query.trim().length > 0,
     queryFn: async ({ signal }) => {
@@ -49,10 +62,23 @@ export function useUnifiedSearch(query: string, enabled: boolean) {
       // addon" state meaning what it says.
       const first = settled[0]!;
       if (settled.every((r) => r.status === "rejected")) throw (first as PromiseRejectedResult).reason;
-      const [artists, albums, tracks] = settled.map((r) => (r.status === "fulfilled" ? r.value : []));
-      return { artists: artists ?? [], albums: albums ?? [], tracks: tracks ?? [] };
+      return mergeByRelevance(settled.flatMap((r) => (r.status === "fulfilled" ? r.value : [])));
     },
   });
+}
+
+/** Merge per-type hits into one list by `rankingScore` desc, tie-broken by kind. */
+export function mergeByRelevance(items: MetaPreview[]): MetaPreview[] {
+  return items
+    .map((item, i) => ({ item, i }))
+    .sort((a, b) => {
+      const byScore = (b.item.rankingScore ?? 0) - (a.item.rankingScore ?? 0);
+      if (byScore !== 0) return byScore;
+      const byKind = (TYPE_PRIORITY[a.item.type] ?? 9) - (TYPE_PRIORITY[b.item.type] ?? 9);
+      return byKind !== 0 ? byKind : a.i - b.i; // stable within a kind (keeps addon rank)
+    })
+    .slice(0, MERGED_LIMIT)
+    .map((x) => x.item);
 }
 
 /**

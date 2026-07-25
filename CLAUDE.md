@@ -304,8 +304,11 @@ The app is a React/Vite shell at `index.html` → `src/app/main.tsx`.
   failing doesn't fail the search, only a clean sweep does. The merged list then
   **collapses duplicate rows** (one song exists as many recordings — single /
   album / deluxe / explicit — that would otherwise render as identical lines,
-  keeping the highest-ranked) and **labels each row with its type** (Song / Album
-  / Artist) so a mixed list is legible without hovering.
+  keeping the highest-ranked) and makes each row's **kind legible** — woven into
+  the subtitle ("Song · <artist>" / "Album · <artist>" / "Artist") where the eye
+  already goes, plus an artwork shape cue (artist = circle, album = stacked
+  square, song = square with a play badge) — so a mixed list reads at a glance
+  without hunting a trailing badge.
   - **A song played from search carries album context (`releaseId`), not just its
     recording (2026-07-25).** `previewToTrack` threads the track hit's `releaseId`
     into the queued `TrackRef`, and the stream request forwards it — so a

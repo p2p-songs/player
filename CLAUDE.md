@@ -301,7 +301,19 @@ The app is a React/Vite shell at `index.html` → `src/app/main.tsx`.
   (Meili relevance, forwarded by musicmeta as an optional `metaPreview` field);
   equal scores break **artist → track → album** (an artist tops the score only
   when the query names it; below that a search box wants to play). One type
-  failing doesn't fail the search, only a clean sweep does.
+  failing doesn't fail the search, only a clean sweep does. The merged list then
+  **collapses duplicate rows** (one song exists as many recordings — single /
+  album / deluxe / explicit — that would otherwise render as identical lines,
+  keeping the highest-ranked) and **labels each row with its type** (Song / Album
+  / Artist) so a mixed list is legible without hovering.
+  - **A song played from search carries album context (`releaseId`), not just its
+    recording (2026-07-25).** `previewToTrack` threads the track hit's `releaseId`
+    into the queued `TrackRef`, and the stream request forwards it — so a
+    search-play resolves album-scoped, the same way `albumToTracks` makes an
+    album-screen play work. Without it a bare recording is on dozens of releases
+    and the stream addon searches artist+title alone: a new single-release song
+    played from search but a much-pressed 2010 song didn't (it did from the album
+    screen). musicmeta supplies `releaseId` on track previews (see its README).
   **`useDebounced` is load-bearing, not polish.** Search had no debounce and got
   away with it at one request per keystroke; three per keystroke turned an
   18-character phrase into **54 requests**, and against MusicBrainz's 1 req/sec

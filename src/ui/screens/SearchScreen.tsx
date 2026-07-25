@@ -5,10 +5,11 @@
  *
  * **One box, no type filter.** People type "justin bieber baby" — an artist and
  * a song together — so making them pick a category first asks a question they
- * can't answer yet. Results are sectioned instead: artists and albums are few
- * and precise, so they come first and are capped; songs are many and follow in
- * full. That ordering is what makes both "taylor swift" (you want the artist)
- * and "bohemian rhapsody" (you want the song) land without a click.
+ * can't answer yet. Results are merged into one relevance-ordered list (see
+ * `mergeByRelevance`) so the single best hit leads whatever its type; each row
+ * carries a type label so a song, an album, and an artist still read apart at a
+ * glance. That's what makes both "taylor swift" (you want the artist) and
+ * "bohemian rhapsody" (you want the song) land without a click.
  */
 import type { MetaPreview } from "@p2p-songs/protocol";
 import { useUi } from "../../app/store.js";
@@ -31,6 +32,7 @@ import {
 } from "../components/primitives.js";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 
 const EXAMPLES = ["taylor swift", "you seem sad for a girl in love", "bohemian rhapsody"];
 
@@ -167,12 +169,16 @@ function CatalogSize({ enabled }: { enabled: boolean }) {
   );
 }
 
+/** Human label for a result's content type — the badge every row wears. */
+const TYPE_LABEL: Record<string, string> = { track: "Song", album: "Album", artist: "Artist", playlist: "Playlist" };
+
 /**
- * One row in the merged, relevance-ordered results. The item's **type** decides
- * its affordance, not a section header: a song plays (its artwork carries a play
- * badge on hover, no chevron); an artist or album opens (a chevron, and the
- * artist's artwork is circular). This is the same row vocabulary used across the
- * app, so a mixed list still reads at a glance which rows play and which drill in.
+ * One row in the merged, relevance-ordered results. Because the list mixes types,
+ * each row wears a **type label** (Song / Album / Artist) so its kind is legible
+ * without hovering — the affordances still reinforce it (a song plays, its artwork
+ * carrying a play badge on hover; an artist or album opens, with a chevron and, for
+ * an artist, circular artwork), but the label is what makes a mixed list readable
+ * at a glance and tells apart same-named results of different kinds.
  */
 function ResultRow({
   item,
@@ -201,11 +207,14 @@ function ResultRow({
       )}
       {/* An artist row is only an id and a name — a subtitle would be noise. */}
       <RowMain title={item.name} sub={isArtist ? undefined : (item.description ?? "Unknown artist")} />
-      {isTrack ? null : (
-        <RowTime>
-          <ChevronRightIcon className="size-4" />
-        </RowTime>
-      )}
+      <div className="flex shrink-0 items-center gap-2">
+        <Badge variant="secondary">{TYPE_LABEL[item.type] ?? item.type}</Badge>
+        {isTrack ? null : (
+          <RowTime>
+            <ChevronRightIcon className="size-4" />
+          </RowTime>
+        )}
+      </div>
     </Row>
   );
 }

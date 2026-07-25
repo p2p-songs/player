@@ -2,24 +2,30 @@ import { describe, it, expect } from "vitest";
 import type { MetaPreview } from "@p2p-songs/protocol";
 import { mergeByRelevance } from "./useCatalog.js";
 
-const artist = (name: string, rankingScore?: number): MetaPreview => ({
-  type: "artist",
-  id: `mbid:artist:${name.replace(/\W/g, "").padEnd(8, "0").slice(0, 8)}-0000-4000-8000-000000000000`,
-  name,
-  ...(rankingScore !== undefined ? { rankingScore } : {}),
-});
-const album = (name: string, rankingScore?: number): MetaPreview => ({
-  type: "album",
-  id: `mbid:release:${name.replace(/\W/g, "").padEnd(8, "0").slice(0, 8)}-0000-4000-8000-000000000000`,
-  name,
-  ...(rankingScore !== undefined ? { rankingScore } : {}),
-});
-const track = (name: string, rankingScore?: number): MetaPreview => ({
-  type: "track",
-  id: `mbid:recording:${name.replace(/\W/g, "").padEnd(8, "0").slice(0, 8)}-0000-4000-8000-000000000000`,
-  name,
-  ...(rankingScore !== undefined ? { rankingScore } : {}),
-});
+// Ids are branded (`string & BRAND<…>`); in a fixture we mint the string and
+// assert the shape rather than route it through a parser.
+const uuid = (name: string) => `${name.replace(/\W/g, "").padEnd(8, "0").slice(0, 8)}-0000-4000-8000-000000000000`;
+const artist = (name: string, rankingScore?: number): MetaPreview =>
+  ({
+    type: "artist",
+    id: `mbid:artist:${uuid(name)}`,
+    name,
+    ...(rankingScore !== undefined ? { rankingScore } : {}),
+  }) as MetaPreview;
+const album = (name: string, rankingScore?: number): MetaPreview =>
+  ({
+    type: "album",
+    id: `mbid:release:${uuid(name)}`,
+    name,
+    ...(rankingScore !== undefined ? { rankingScore } : {}),
+  }) as MetaPreview;
+const track = (name: string, rankingScore?: number): MetaPreview =>
+  ({
+    type: "track",
+    id: `mbid:recording:${uuid(name)}`,
+    name,
+    ...(rankingScore !== undefined ? { rankingScore } : {}),
+  }) as MetaPreview;
 
 describe("mergeByRelevance", () => {
   it("orders by rankingScore desc, regardless of type", () => {
@@ -60,5 +66,25 @@ describe("mergeByRelevance", () => {
   it("without scores, falls back to the type tie-break (artist, then track, then album)", () => {
     const merged = mergeByRelevance([album("B"), track("C"), artist("A")]);
     expect(merged.map((m) => m.type)).toEqual(["artist", "track", "album"]);
+  });
+
+  it("collapses duplicate recordings of the same song into one row", () => {
+    // The screenshot bug: four MusicBrainz recordings of one song (different
+    // pressings) all named the same by the same artist render as four identical
+    // rows. Keep the highest-ranked one, drop the rest.
+    const merged = mergeByRelevance([
+      track("you seem pretty sad for a girl so in love", 0.9),
+      track("you seem pretty sad for a girl so in love", 0.88),
+      track("you seem pretty sad for a girl so in love", 0.85),
+      track("the cure", 0.8),
+    ]);
+    expect(merged.map((m) => m.name)).toEqual(["you seem pretty sad for a girl so in love", "the cure"]);
+  });
+
+  it("keeps same-named results of different types (a song and its album)", () => {
+    // Dedup keys on type too, so "Fearless" the song and "Fearless" the album
+    // both survive — they are genuinely different results.
+    const merged = mergeByRelevance([track("Fearless", 0.9), album("Fearless", 0.9)]);
+    expect(merged.map((m) => m.type)).toEqual(["track", "album"]);
   });
 });

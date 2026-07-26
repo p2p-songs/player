@@ -311,7 +311,13 @@ export class Engine {
   private beginResolve(item: QueueItem, stamp: Stamp): void {
     this.claimResolution(stamp);
     this.clearDownloadTimer(stamp.itemId); // supersede a pending poll; keep its budget
-    this.queue = setResolution(this.queue, stamp.itemId, { status: "resolving" });
+    // A poll-driven re-resolve of a downloading item keeps showing "downloading"
+    // — flipping it to "resolving" for each round-trip made the UI flicker between
+    // the progress bar and "Finding a source…". A genuinely fresh resolve still
+    // shows "resolving".
+    if (getItem(this.queue, stamp.itemId)?.resolution.status !== "downloading") {
+      this.queue = setResolution(this.queue, stamp.itemId, { status: "resolving" });
+    }
     this.scheduler.resolve(item, stamp).then((outcome) => {
       // A superseded resolve that completes anyway must commit nothing (audit A-007).
       if (!this.ownsResolution(stamp)) return;

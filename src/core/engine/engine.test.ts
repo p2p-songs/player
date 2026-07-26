@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import type { RecordingId } from "@p2p-songs/protocol";
 import type { TrackRef } from "../queue/types.js";
 import { counterIdGen } from "../queue/types.js";
@@ -102,6 +102,59 @@ describe("fallback within an item, then re-resolve", () => {
     await flush();
     expect(resolver.calls.filter((c) => c === rec("1")).length).toBe(2); // re-resolved
     expect(playback(engine).status).toBe("buffering");
+  });
+});
+
+describe("resolving (a source being downloaded on debrid)", () => {
+  it("holds the track in a downloading state instead of skipping", async () => {
+    const { engine, resolver } = makeEngine(1);
+    resolver.script(rec("1"), { ok: false, resolving: { progress: 0.4, message: "Downloading on debrid", retryAfter: 5 } });
+    engine.play();
+    await flush();
+    const r = res(engine, "q1");
+    expect(r.status).toBe("downloading");
+    if (r.status === "downloading") expect(r.progress).toBe(0.4);
+    expect(playback(engine).status).not.toBe("error");
+  });
+
+  it("re-resolves after the retry delay and plays once the download completes", async () => {
+    vi.useFakeTimers();
+    try {
+      const { engine, resolver, audio } = makeEngine(1);
+      let call = 0;
+      resolver.script(rec("1"), async () =>
+        call++ === 0 ? { ok: false, resolving: { retryAfter: 5 } } : { ok: true, streams: [urlStream("https://ready")] },
+      );
+      engine.play();
+      await vi.advanceTimersByTimeAsync(0); // settle the first resolve
+      expect(res(engine, "q1").status).toBe("downloading");
+      await vi.advanceTimersByTimeAsync(5_000); // fire the poll → re-resolve → resolved
+      expect(res(engine, "q1").status).toBe("resolved");
+      audio.emitLoaded();
+      expect(playback(engine).status).toBe("playing");
+      expect(resolver.calls.filter((c) => c === rec("1")).length).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("gives up (fails) if the download never finishes within the poll budget", async () => {
+    vi.useFakeTimers();
+    try {
+      const { engine, resolver } = makeEngine(1, { maxDownloadPolls: 3 });
+      resolver.script(rec("1"), { ok: false, resolving: { retryAfter: 3 } }); // never completes
+      engine.play();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(res(engine, "q1").status).toBe("downloading");
+      // Each step is one poll → re-resolve; after the (small) budget it must fail.
+      for (let i = 0; i < 10 && res(engine, "q1").status !== "failed"; i++) {
+        await vi.advanceTimersToNextTimerAsync();
+      }
+      expect(res(engine, "q1").status).toBe("failed");
+      expect(res(engine, "q1")).toMatchObject({ reason: "download timed out" });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

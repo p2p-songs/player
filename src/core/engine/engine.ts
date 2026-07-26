@@ -31,7 +31,7 @@ import {
   type CreateQueueOptions,
 } from "../queue/queue.js";
 import { counterIdGen, type IdGen, type Queue, type QueueItem, type QueueItemId, type RepeatMode, type ResolutionState, type Rng, type TrackRef } from "../queue/types.js";
-import type { Stream } from "@p2p-songs/protocol";
+import type { Resolving, Stream } from "@p2p-songs/protocol";
 import { Scheduler } from "../scheduler/scheduler.js";
 import type { Resolver } from "../scheduler/resolver.js";
 import type { AudioBackend, AudioEvent } from "../audio/backend.js";
@@ -45,6 +45,8 @@ export interface EngineOptions {
   maxConsecutiveFailures?: number;
   /** Clock for expiry-hint checks (default Date.now). */
   now?: () => number;
+  /** Max re-resolve polls for a downloading source before giving up (default {@link MAX_DOWNLOAD_POLLS}). */
+  maxDownloadPolls?: number;
 }
 
 export interface EngineState {
@@ -53,6 +55,14 @@ export interface EngineState {
 }
 
 type ResolvedResolution = Extract<ResolutionState, { status: "resolved" }>;
+
+/**
+ * Bounds on waiting for a `resolving` (downloading) source. A torrent that never
+ * finishes must eventually fail rather than hold the track forever; at the floor
+ * cadence this caps the wait around ~10 minutes.
+ */
+const MAX_DOWNLOAD_POLLS = 60;
+const MIN_DOWNLOAD_RETRY_MS = 3_000;
 
 export class Engine {
   private queue: Queue;
@@ -65,6 +75,7 @@ export class Engine {
   private readonly rng: Rng;
   private readonly prefetchCount: number;
   private readonly maxConsecutiveFailures: number;
+  private readonly maxDownloadPolls: number;
   private readonly now: () => number;
   private readonly unsubscribeAudio: () => void;
 
@@ -78,6 +89,14 @@ export class Engine {
    * uniquely identifies an operation.
    */
   private readonly resolutionOp = new Map<QueueItemId, number>();
+  /**
+   * Pending re-resolve timers for items whose source is still downloading (a
+   * stream addon returned `resolving`). Keyed by item id; cleared on supersede,
+   * skip, and teardown so a timer can never re-resolve a stale item.
+   */
+  private readonly downloadTimers = new Map<QueueItemId, ReturnType<typeof setTimeout>>();
+  /** How many times we've polled a still-downloading item — bounds the total wait. */
+  private readonly downloadPolls = new Map<QueueItemId, number>();
   /** Per-current-item fallback budget (reset when a new item starts). */
   private itemFallback = { reResolved: false };
   /** Consecutive across-item failures with no successful play in between. */
@@ -93,6 +112,7 @@ export class Engine {
     this.rng = options.rng ?? Math.random;
     this.prefetchCount = options.prefetchCount ?? 2;
     this.maxConsecutiveFailures = options.maxConsecutiveFailures ?? 6;
+    this.maxDownloadPolls = options.maxDownloadPolls ?? MAX_DOWNLOAD_POLLS;
     this.now = options.now ?? Date.now;
     this.queue = { itemsById: {}, canonicalOrder: [], playOrder: [], currentItemId: null, repeat: "off", shuffle: false };
     this.playback = initialState(0);
@@ -125,6 +145,7 @@ export class Engine {
   destroy(): void {
     this.unsubscribeAudio();
     this.scheduler.cancelAll();
+    this.cancelDownloadPolls();
     this.listeners.clear();
   }
 
@@ -135,6 +156,7 @@ export class Engine {
     this.queue = createQueue(tracks, this.idGen, { rng: this.rng, ...options });
     this.epoch += 1;
     this.scheduler.cancelAll();
+    this.cancelDownloadPolls();
     this.loadTokens.clear();
     this.resetBreaker();
     this.dispatch({ type: "RESET", epoch: this.epoch });
@@ -156,6 +178,7 @@ export class Engine {
     this.queue = { ...queue, itemsById };
     this.epoch += 1;
     this.scheduler.cancelAll();
+    this.cancelDownloadPolls();
     this.loadTokens.clear();
     this.resolutionOp.clear();
     this.resetBreaker();
@@ -247,6 +270,7 @@ export class Engine {
   stop(): void {
     this.epoch += 1;
     this.scheduler.cancelAll();
+    this.cancelDownloadPolls();
     this.dispatch({ type: "RESET", epoch: this.epoch });
   }
 
@@ -257,7 +281,10 @@ export class Engine {
     this.queue = setCurrent(this.queue, itemId);
     this.epoch += 1; // the current item changed
     this.itemFallback = { reResolved: false };
-    this.scheduler.cancelExcept(this.nearCursorIds());
+    const keep = this.nearCursorIds();
+    this.scheduler.cancelExcept(keep);
+    for (const id of this.downloadTimers.keys()) if (!keep.has(id)) this.forgetDownload(id);
+    this.forgetDownload(itemId); // a fresh selection resets this item's download budget
     const stamp: Stamp = { epoch: this.epoch, itemId, attemptId: ++this.attempt };
     this.dispatch({ type: "SELECT", epoch: stamp.epoch, itemId, attemptId: stamp.attemptId });
 
@@ -283,11 +310,13 @@ export class Engine {
   /** Kick off a fresh resolution for the current attempt and feed the result to the FSM. */
   private beginResolve(item: QueueItem, stamp: Stamp): void {
     this.claimResolution(stamp);
+    this.clearDownloadTimer(stamp.itemId); // supersede a pending poll; keep its budget
     this.queue = setResolution(this.queue, stamp.itemId, { status: "resolving" });
     this.scheduler.resolve(item, stamp).then((outcome) => {
       // A superseded resolve that completes anyway must commit nothing (audit A-007).
       if (!this.ownsResolution(stamp)) return;
       if (outcome.ok) {
+        this.forgetDownload(stamp.itemId); // terminal: reset the download budget
         const picked = pickPlayable(outcome.streams, 0);
         if (!picked) {
           this.queue = setResolution(this.queue, stamp.itemId, { status: "failed", reason: "no playable stream" });
@@ -296,13 +325,72 @@ export class Engine {
           this.queue = setResolution(this.queue, stamp.itemId, resolvedFrom(outcome.streams, picked.idx, picked.url));
           this.dispatch({ type: "RESOLVED", stamp, url: picked.url });
         }
+      } else if ("resolving" in outcome) {
+        // A source is being prepared (a debrid download). Show progress and hold
+        // the track, re-resolving on the provider's cadence, instead of failing.
+        this.onResolving(stamp, outcome.resolving);
       } else {
+        this.forgetDownload(stamp.itemId); // terminal: reset the download budget
         this.queue = setResolution(this.queue, stamp.itemId, { status: "failed", ...(outcome.reason ? { reason: outcome.reason } : {}) });
         this.dispatch({ type: "RESOLVE_FAILED", stamp, ...(outcome.reason ? { reason: outcome.reason } : {}) });
       }
       this.notify();
     });
     this.notify();
+  }
+
+  /**
+   * Handle a `resolving` outcome for the item owning `stamp`: record a
+   * `downloading` resolution (progress for the UI) and schedule one re-resolve.
+   * Bounded by {@link MAX_DOWNLOAD_POLLS} so a torrent that never finishes fails
+   * instead of spinning forever.
+   */
+  private onResolving(stamp: Stamp, resolving: Resolving): void {
+    const polls = (this.downloadPolls.get(stamp.itemId) ?? 0) + 1;
+    if (polls > this.maxDownloadPolls) {
+      this.forgetDownload(stamp.itemId);
+      this.queue = setResolution(this.queue, stamp.itemId, { status: "failed", reason: "download timed out" });
+      this.dispatch({ type: "RESOLVE_FAILED", stamp, reason: "download timed out" });
+      return;
+    }
+    this.downloadPolls.set(stamp.itemId, polls);
+    this.queue = setResolution(this.queue, stamp.itemId, {
+      status: "downloading",
+      ...(resolving.progress !== undefined ? { progress: resolving.progress } : {}),
+      ...(resolving.message ? { message: resolving.message } : {}),
+    });
+    const delayMs = Math.max(MIN_DOWNLOAD_RETRY_MS, (resolving.retryAfter ?? 10) * 1000);
+    const timer = setTimeout(() => {
+      this.downloadTimers.delete(stamp.itemId);
+      if (!this.ownsResolution(stamp)) return; // superseded by a skip/reorder
+      this.reResolve(stamp.itemId);
+    }, delayMs);
+    const prev = this.downloadTimers.get(stamp.itemId);
+    if (prev) clearTimeout(prev);
+    this.downloadTimers.set(stamp.itemId, timer);
+  }
+
+  /** Cancel a pending download re-resolve timer, **keeping** the poll count so the
+   *  budget survives the re-resolve it triggers (a poll fires → re-resolve → new
+   *  timer; the count must accumulate across that, not reset). */
+  private clearDownloadTimer(itemId: QueueItemId): void {
+    const timer = this.downloadTimers.get(itemId);
+    if (timer) clearTimeout(timer);
+    this.downloadTimers.delete(itemId);
+  }
+
+  /** Cancel the timer **and** forget the poll count — for a genuinely fresh start
+   *  or a terminal (resolved/failed) outcome, where the budget should reset. */
+  private forgetDownload(itemId: QueueItemId): void {
+    this.clearDownloadTimer(itemId);
+    this.downloadPolls.delete(itemId);
+  }
+
+  /** Cancel every pending download re-resolve (teardown / queue reset / epoch change). */
+  private cancelDownloadPolls(): void {
+    for (const timer of this.downloadTimers.values()) clearTimeout(timer);
+    this.downloadTimers.clear();
+    this.downloadPolls.clear();
   }
 
   /** Try a specific already-resolved stream (same item, new attempt) — the fallback walk. */
@@ -347,6 +435,17 @@ export class Engine {
           } else {
             this.queue = setResolution(this.queue, id, { status: "failed", reason: "no playable stream" });
           }
+        } else if ("resolving" in outcome) {
+          // A prefetch download has started; record it for the UI but don't poll
+          // here — when this item becomes current, `startItem` re-resolves it and
+          // `onResolving` takes over the wait. (Starting the download early still
+          // warms it, so it may be ready by the time we arrive.)
+          const r = outcome.resolving;
+          this.queue = setResolution(this.queue, id, {
+            status: "downloading",
+            ...(r.progress !== undefined ? { progress: r.progress } : {}),
+            ...(r.message ? { message: r.message } : {}),
+          });
         } else {
           this.queue = setResolution(this.queue, id, { status: "failed", ...(outcome.reason ? { reason: outcome.reason } : {}) });
         }

@@ -6,11 +6,17 @@
  * P-3; a fake drives P-1), and the scheduler that calls it applies command-plane
  * semantics: dedup by operation id, no retry/refetch, cancellation, memory-only.
  */
-import type { Stream } from "@p2p-songs/protocol";
+import type { Resolving, Stream } from "@p2p-songs/protocol";
 import type { TrackRef } from "../queue/types.js";
 
 export type ResolveOutcome =
   | { ok: true; streams: Stream[] }
+  /**
+   * No stream *yet* — a provider is preparing one (e.g. a debrid addon
+   * downloading an uncached torrent). The engine holds the track and re-resolves
+   * on the provider's cadence instead of skipping it.
+   */
+  | { ok: false; resolving: Resolving }
   | { ok: false; reason?: string };
 
 export interface Resolver {

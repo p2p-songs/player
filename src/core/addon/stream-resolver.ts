@@ -15,7 +15,7 @@
  * Neutrality (§11): it knows nothing addon-specific — every provider is called
  * through the generic protocol client and judged only by what it returns.
  */
-import type { Stream, StreamRequest } from "@p2p-songs/protocol";
+import type { Resolving, Stream, StreamRequest } from "@p2p-songs/protocol";
 import type { TrackRef } from "../queue/types.js";
 import type { Resolver, ResolveOutcome } from "../scheduler/resolver.js";
 import type { AddonClient } from "./client.js";
@@ -39,7 +39,7 @@ export interface AddonStreamResolverOptions extends ProviderHealthOptions {
 
 /** The bounded outcome of asking one provider for streams — never rejects. */
 type ProviderResult =
-  | { kind: "ok"; streams: Stream[] }
+  | { kind: "ok"; streams: Stream[]; resolving?: Resolving }
   | { kind: "down" } // unreachable / 5xx / auth / malformed / timed out
   | { kind: "aborted" } // the outer (scheduler) signal fired — a supersede/skip
   | { kind: "fatal"; error: unknown };
@@ -85,6 +85,7 @@ export class AddonStreamResolver implements Resolver {
 
     const merged: Stream[] = [];
     let anyReachable = false;
+    let resolving: Resolving | undefined;
     for (let i = 0; i < eligible.length; i++) {
       const addon = eligible[i]!;
       const r = results[i]!;
@@ -93,6 +94,8 @@ export class AddonStreamResolver implements Resolver {
           anyReachable = true;
           this.health.recordReachable(addon.id); // reachable — even an empty answer clears backoff
           for (const s of r.streams) if (typeof s.url === "string") merged.push(s);
+          // Keep the most-advanced in-progress download to report while we wait.
+          if (r.resolving && (r.resolving.progress ?? 0) >= (resolving?.progress ?? -1)) resolving = r.resolving;
           break;
         case "down":
           this.health.recordFailure(addon.id); // addon-wide problem (incl. timeout) → back it off
@@ -105,6 +108,9 @@ export class AddonStreamResolver implements Resolver {
     }
 
     if (merged.length > 0) return { ok: true, streams: merged };
+    // No stream yet, but a provider is preparing one → tell the engine to wait,
+    // not skip. (A ready stream always wins over a resolving one.)
+    if (resolving) return { ok: false, resolving };
     // No playable stream. Separate "reachable but no match" from "all providers down".
     return anyReachable
       ? { ok: false, reason: "no playable stream found" }
@@ -121,7 +127,7 @@ export class AddonStreamResolver implements Resolver {
     const r = await askBounded((signal) => addon.getStreams(req, signal), outerSignal, this.providerTimeoutMs);
     switch (r.kind) {
       case "ok":
-        return { kind: "ok", streams: r.value };
+        return { kind: "ok", streams: r.value.streams, ...(r.value.resolving ? { resolving: r.value.resolving } : {}) };
       case "timeout": // hung past its deadline → treat as unreachable
         return { kind: "down" };
       case "aborted":

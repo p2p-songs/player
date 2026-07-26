@@ -78,6 +78,18 @@ typecheck + build green.**
   checked before every `QueueItem.resolution` commit, so a superseded resolve
   can't poison the cache with a stale bearer URL. Adding the first item to an
   empty queue sets a cursor (+ `play()` falls back to `playOrder[0]`).
+  - **`downloading` resolution state (2026-07-26).** A stream addon can answer
+    `/stream` with **`resolving`** (no URL yet — it's preparing one, e.g. a debrid
+    addon downloading an uncached torrent). The resolver surfaces it, and the
+    engine records `resolution: { status: "downloading", progress?, message? }`
+    and **holds the track**, re-resolving on the provider's `retryAfter` cadence
+    (`onResolving` → `setTimeout` → `reResolve`) instead of skipping. A ready
+    stream always wins over a resolving one. The wait is **bounded**
+    (`maxDownloadPolls`, default 60) then fails; the per-item poll budget persists
+    across the poll-driven re-resolves (`clearDownloadTimer` keeps the count,
+    `forgetDownload` resets it) and every timer is cancelled on
+    supersede/skip/teardown. UI: the player bar's `SourceChip` shows "Downloading
+    on debrid… N%".
 
 **A-007 (2026-07-20) reconciled.** consecutive-threshold vs sweep-set is a
 deliberate simplification (still current). 46 tests at P-1.

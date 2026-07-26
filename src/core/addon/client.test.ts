@@ -74,7 +74,7 @@ describe("AddonClient.getStreams", () => {
       () => ({ status: 200, body: { streams: [{ url: "https://cdn.test/a.flac", name: "FLAC" }] } }),
     );
     const client = await AddonClient.install(MANIFEST_URL, { httpGet: http.get });
-    const streams = await client.getStreams(req);
+    const { streams } = await client.getStreams(req);
     expect(streams).toHaveLength(1);
     expect(streams[0]!.url).toBe("https://cdn.test/a.flac");
   });
@@ -95,7 +95,7 @@ describe("AddonClient.getStreams", () => {
       () => ({ status: 404, body: { err: "not found" } }),
     );
     const client = await AddonClient.install(MANIFEST_URL, { httpGet: http.get });
-    await expect(client.getStreams(req)).resolves.toEqual([]);
+    await expect(client.getStreams(req)).resolves.toEqual({ streams: [] });
   });
 
   it("propagates AddonUnreachableError on a 503 (provider down)", async () => {
@@ -124,7 +124,7 @@ describe("AddonClient.getStreams", () => {
       () => ({ status: 400, body: { err: "bad request" } }),
     );
     const client = await AddonClient.install(MANIFEST_URL, { httpGet: http.get, onBadRequest });
-    await expect(client.getStreams(req)).resolves.toEqual([]);
+    await expect(client.getStreams(req)).resolves.toEqual({ streams: [] });
     expect(onBadRequest).toHaveBeenCalledWith({ addonId: "com.test.stream", resource: "stream", status: 400 });
   });
 

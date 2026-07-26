@@ -34,6 +34,12 @@ export interface TrackRef {
 export type ResolutionState =
   | { status: "idle" }
   | { status: "resolving" }
+  /**
+   * A source isn't ready yet but is being prepared — a stream addon reported
+   * `resolving` (e.g. a debrid addon downloading an uncached torrent). The engine
+   * holds the track and re-resolves rather than skipping; the UI shows progress.
+   */
+  | { status: "downloading"; progress?: number; message?: string }
   | { status: "resolved"; streams: Stream[]; chosenIdx: number; url: string; expiresAt?: string }
   | { status: "failed"; reason?: string };
 

@@ -165,6 +165,16 @@ function SourceChip() {
   const { item, status } = usePlayer();
   const resolution = item?.resolution;
   const base = "max-w-44 truncate text-right text-[11px] leading-tight text-chrome-muted";
+  // A source is downloading on the user's debrid (an uncached torrent). Show
+  // progress so the wait is honest — this can take minutes, unlike buffering.
+  if (resolution?.status === "downloading") {
+    const pct = resolution.progress !== undefined ? ` ${Math.round(resolution.progress * 100)}%` : "";
+    return (
+      <div className={base} title="Preparing a source on your debrid service">
+        {resolution.message ?? "Downloading"}…{pct}
+      </div>
+    );
+  }
   if (status === "resolving") return <div className={base}>Finding a source…</div>;
   if (resolution?.status !== "resolved") return <div className={base} />;
   const stream = resolution.streams[resolution.chosenIdx];

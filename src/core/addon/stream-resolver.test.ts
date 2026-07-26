@@ -82,6 +82,30 @@ describe("AddonStreamResolver", () => {
     expect(out).toEqual({ ok: false, reason: "no playable stream found" });
   });
 
+  it("surfaces a provider's `resolving` marker when it has no stream yet", async () => {
+    const http = new FakeHttp();
+    const resolving: FakeHandler = () => ({ status: 200, body: { streams: [], resolving: { progress: 0.5, message: "Downloading on debrid" } } });
+    const a = await installStreamAddon(http, "a", "https://a.example", resolving);
+    const resolver = new AddonStreamResolver({ providers: () => [a] });
+
+    const out = await resolver.resolve(track, newSignal());
+    expect(out.ok).toBe(false);
+    if (!out.ok && "resolving" in out) expect(out.resolving).toMatchObject({ progress: 0.5 });
+    else throw new Error("expected a resolving outcome");
+  });
+
+  it("prefers a ready stream over a provider that is still resolving", async () => {
+    const http = new FakeHttp();
+    const resolving: FakeHandler = () => ({ status: 200, body: { streams: [], resolving: { progress: 0.2 } } });
+    const a = await installStreamAddon(http, "a", "https://a.example", resolving);
+    const b = await installStreamAddon(http, "b", "https://b.example", okStream("https://b.cdn/y.flac"));
+    const resolver = new AddonStreamResolver({ providers: () => [a, b] });
+
+    const out = await resolver.resolve(track, newSignal());
+    expect(out.ok).toBe(true);
+    if (out.ok) expect(out.streams.map((s) => s.url)).toEqual(["https://b.cdn/y.flac"]);
+  });
+
   it("returns 'no stream addon for this track' when no provider handles the id", async () => {
     const http = new FakeHttp();
     // idPrefixes is mbid:recording:; an isrc id is not handled

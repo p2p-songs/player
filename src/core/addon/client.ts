@@ -25,6 +25,7 @@ import {
   type Manifest,
   type Resource,
   type ContentType,
+  type Resolving,
   type Stream,
   type StreamRequest,
   type LyricsRequest,
@@ -120,8 +121,13 @@ export class AddonClient {
     return prefixes.some((p) => id.startsWith(p));
   }
 
-  /** `/stream` for a recording. Returns the ranked stream list (empty ⇒ no match, not an error). */
-  async getStreams(req: StreamRequest, signal?: AbortSignal): Promise<Stream[]> {
+  /**
+   * `/stream` for a recording. Returns the ranked stream list (empty ⇒ no match,
+   * not an error) plus an optional `resolving` marker — the addon has *no stream
+   * yet* but is preparing one (e.g. downloading an uncached torrent), so the
+   * caller should wait and re-request rather than treat it as a no-match.
+   */
+  async getStreams(req: StreamRequest, signal?: AbortSignal): Promise<{ streams: Stream[]; resolving?: Resolving }> {
     const route: ResourceRoute = {
       resource: "stream",
       type: "track",
@@ -129,7 +135,7 @@ export class AddonClient {
       extra: streamExtra(req),
     };
     const res = await this.fetch("stream", route, streamResponseSchema, signal);
-    return res?.streams ?? [];
+    return { streams: res?.streams ?? [], ...(res?.resolving ? { resolving: res.resolving } : {}) };
   }
 
   /** `/meta` for a single content item. `undefined` ⇒ this addon has no meta for it. */

@@ -164,6 +164,30 @@ export function Scrubber({
   );
 }
 
+/**
+ * Shown in the scrubber's place while a track's source is still being prepared
+ * (a stream addon is fetching it). A determinate fill when we have progress, a
+ * gentle pulse when we don't — either way it reads as "working, not stuck", which
+ * a frozen 0:00 scrubber does not. Not interactive: there's nothing to seek yet.
+ */
+export function DownloadBar({ progress, size = "sm" }: { progress?: number; size?: "sm" | "lg" }) {
+  const pct = progress !== undefined ? Math.round(Math.max(0, Math.min(1, progress)) * 100) : undefined;
+  return (
+    <div className={cn("flex w-full items-center", size === "lg" ? "gap-4" : "gap-2.5")} role="status" aria-live="polite">
+      <span className={cn("shrink-0 whitespace-nowrap text-chrome-muted", size === "lg" ? "text-sm" : "text-xs")}>
+        Downloading{pct !== undefined ? `… ${pct}%` : "…"}
+      </span>
+      <div className={cn("relative w-full grow overflow-hidden bg-chrome-track", size === "lg" ? "h-2.5" : "h-1.5")}>
+        {pct === undefined ? (
+          <div className="absolute inset-y-0 left-0 w-1/3 animate-pulse bg-primary/70" />
+        ) : (
+          <div className="absolute inset-y-0 left-0 bg-primary transition-[width] duration-500 ease-out" style={{ width: `${pct}%` }} />
+        )}
+      </div>
+    </div>
+  );
+}
+
 function Time({ children, size }: { children: ReactNode; size: "sm" | "lg" }) {
   return (
     <span

@@ -27,7 +27,7 @@ import { usePlayer, useUpNext } from "../viewmodels/useEngineState.js";
 import { useIsSaved, useToggleSaved, trackToSaved } from "../viewmodels/useLibrary.js";
 import { Artwork, formatTime } from "../components/common.js";
 import { Vinyl } from "../components/Vinyl.js";
-import { PlayButton, Scrubber, TransportButton } from "../components/transport.js";
+import { DownloadBar, PlayButton, Scrubber, TransportButton } from "../components/transport.js";
 import { ChromeButton, Row, RowMain, RowTime, Rows, StateBlock } from "../components/primitives.js";
 import { PlaybackAlert } from "../components/PlaybackAlert.js";
 import {
@@ -57,6 +57,7 @@ export function NowPlayingScreen() {
 
   const busy = status === "resolving" || status === "buffering";
   const resolution = item?.resolution;
+  const downloading = resolution?.status === "downloading" ? resolution : undefined;
   const source =
     resolution?.status === "resolved" ? (resolution.streams[resolution.chosenIdx]?.name ?? "addon") : undefined;
 
@@ -136,12 +137,11 @@ export function NowPlayingScreen() {
             <PlaybackAlert inline />
 
             <div className="flex flex-col items-center gap-4 pt-4">
-              <Scrubber
-                positionMs={positionMs}
-                durationMs={durationMs}
-                onSeek={player.seek}
-                size="lg"
-              />
+              {downloading ? (
+                <DownloadBar progress={downloading.progress} size="lg" />
+              ) : (
+                <Scrubber positionMs={positionMs} durationMs={durationMs} onSeek={player.seek} size="lg" />
+              )}
               <div className="flex items-center gap-6">
                 <TransportButton
                   label="Shuffle"

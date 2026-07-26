@@ -12,7 +12,7 @@ import { useUi } from "../../app/store.js";
 import { useIsSaved, useToggleSaved, trackToSaved } from "../viewmodels/useLibrary.js";
 import { useVolume } from "../viewmodels/useVolume.js";
 import { Artwork } from "./common.js";
-import { PlayButton, PlayingBars, Scrubber, TransportButton } from "./transport.js";
+import { DownloadBar, PlayButton, PlayingBars, Scrubber, TransportButton } from "./transport.js";
 import { Slider as SliderPrimitive } from "radix-ui";
 import {
   HeartIcon,
@@ -36,6 +36,8 @@ export function PlayerBar() {
   const { track, status, isPlaying, positionMs, durationMs } = player;
   const busy = status === "resolving" || status === "buffering";
   const hasTrack = track !== undefined;
+  const resolution = player.item?.resolution;
+  const downloading = resolution?.status === "downloading" ? resolution : undefined;
 
   return (
     <div className="col-span-2 grid grid-cols-[minmax(200px,1fr)_minmax(340px,2fr)_minmax(200px,1fr)] items-center gap-4 border-t-2 border-border bg-chrome px-4 text-chrome-foreground">
@@ -87,12 +89,11 @@ export function PlayerBar() {
           </TransportButton>
         </div>
 
-        <Scrubber
-          positionMs={positionMs}
-          durationMs={durationMs}
-          onSeek={player.seek}
-          disabled={!hasTrack}
-        />
+        {downloading ? (
+          <DownloadBar progress={downloading.progress} />
+        ) : (
+          <Scrubber positionMs={positionMs} durationMs={durationMs} onSeek={player.seek} disabled={!hasTrack} />
+        )}
       </div>
 
       <div className="flex items-center justify-end gap-2">
@@ -165,16 +166,9 @@ function SourceChip() {
   const { item, status } = usePlayer();
   const resolution = item?.resolution;
   const base = "max-w-44 truncate text-right text-[11px] leading-tight text-chrome-muted";
-  // A source is downloading on the user's debrid (an uncached torrent). Show
-  // progress so the wait is honest — this can take minutes, unlike buffering.
-  if (resolution?.status === "downloading") {
-    const pct = resolution.progress !== undefined ? ` ${Math.round(resolution.progress * 100)}%` : "";
-    return (
-      <div className={base} title="Preparing a source on your debrid service">
-        {resolution.message ?? "Downloading"}…{pct}
-      </div>
-    );
-  }
+  // A download in progress is shown by the DownloadBar (in the scrubber's place),
+  // so keep the corner clear rather than repeating it here.
+  if (resolution?.status === "downloading") return <div className={base} />;
   if (status === "resolving") return <div className={base}>Finding a source…</div>;
   if (resolution?.status !== "resolved") return <div className={base} />;
   const stream = resolution.streams[resolution.chosenIdx];

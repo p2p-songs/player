@@ -138,6 +138,52 @@ describe("resolving (a source being downloaded on debrid)", () => {
     }
   });
 
+  it("fails fast when a download's progress never advances (stall detection)", async () => {
+    vi.useFakeTimers();
+    try {
+      // Generous poll cap, but a stuck-at-0% download must fail long before it.
+      const { engine, resolver } = makeEngine(1, { maxDownloadPolls: 60, maxStallPolls: 3 });
+      resolver.script(rec("1"), { ok: false, resolving: { progress: 0, retryAfter: 3 } });
+      engine.play();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(res(engine, "q1").status).toBe("downloading");
+      for (let i = 0; i < 20 && res(engine, "q1").status !== "failed"; i++) {
+        await vi.advanceTimersToNextTimerAsync();
+      }
+      expect(res(engine, "q1").status).toBe("failed");
+      expect(res(engine, "q1")).toMatchObject({ reason: "download isn't progressing" });
+      // Gave up on the stall, nowhere near the 60-poll cap.
+      expect(resolver.calls.filter((c) => c === rec("1")).length).toBeLessThan(10);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps waiting while a download's progress is still advancing", async () => {
+    vi.useFakeTimers();
+    try {
+      const { engine, resolver, audio } = makeEngine(1, { maxStallPolls: 3 });
+      let call = 0;
+      // Progress climbs every poll — never stalls — then a ready stream arrives
+      // well past maxStallPolls polls, proving movement resets the stall counter.
+      resolver.script(rec("1"), async () => {
+        call++;
+        if (call > 6) return { ok: true, streams: [urlStream("https://ready")] };
+        return { ok: false, resolving: { progress: call * 0.1, retryAfter: 3 } };
+      });
+      engine.play();
+      await vi.advanceTimersByTimeAsync(0);
+      for (let i = 0; i < 8 && res(engine, "q1").status === "downloading"; i++) {
+        await vi.advanceTimersToNextTimerAsync();
+      }
+      expect(res(engine, "q1").status).toBe("resolved");
+      audio.emitLoaded();
+      expect(playback(engine).status).toBe("playing");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("gives up (fails) if the download never finishes within the poll budget", async () => {
     vi.useFakeTimers();
     try {

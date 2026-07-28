@@ -90,6 +90,17 @@ typecheck + build green.**
     `forgetDownload` resets it) and every timer is cancelled on
     supersede/skip/teardown. UI: the player bar's `SourceChip` shows "Downloading
     on debrid… N%".
+    - **Stall detection (2026-07-28).** The 60-poll cap alone means a download
+      stuck at 0% shows "Downloading…" for ~10 minutes before failing. So a
+      download that reports **numeric progress which never advances** (`> best +
+      PROGRESS_EPSILON`) for `maxStallPolls` consecutive polls (default 5) fails
+      early with reason **"download isn't progressing"** — the dead / too-poorly-
+      seeded-torrent case, where the indexer claims seeders but the debrid side
+      can't pull a byte (observed live: Journals/Red candidates seeded 1–3, RD at
+      0% forever). Any real movement resets the counter, so a genuinely slow
+      download keeps its full budget; a progress-*less* `resolving` (no number)
+      isn't subject to it and still relies on `maxDownloadPolls`. Per-item best/
+      stall state lives in `downloadProgress`, cleared alongside the poll budget.
 
 **A-007 (2026-07-20) reconciled.** consecutive-threshold vs sweep-set is a
 deliberate simplification (still current). 46 tests at P-1.

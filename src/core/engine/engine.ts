@@ -47,6 +47,8 @@ export interface EngineOptions {
   now?: () => number;
   /** Max re-resolve polls for a downloading source before giving up (default {@link MAX_DOWNLOAD_POLLS}). */
   maxDownloadPolls?: number;
+  /** Consecutive polls a numeric download progress may sit still before we call it stalled (default {@link MAX_STALL_POLLS}). */
+  maxStallPolls?: number;
 }
 
 export interface EngineState {
@@ -63,6 +65,17 @@ type ResolvedResolution = Extract<ResolutionState, { status: "resolved" }>;
  */
 const MAX_DOWNLOAD_POLLS = 60;
 const MIN_DOWNLOAD_RETRY_MS = 3_000;
+/**
+ * A download that reports numeric progress but never advances is a dead / too-
+ * poorly-seeded torrent the provider will never finish (a thin swarm the debrid
+ * side can't pull from — the indexer's seeder count is often stale). Failing it
+ * after this many consecutive non-advancing polls turns a minutes-long "0%"
+ * spinner into a quick, honest failure, while any real movement (even 0.1%)
+ * resets the counter so a genuinely slow download is never cut off.
+ */
+const MAX_STALL_POLLS = 5;
+/** Progress must climb by at least this fraction to count as "advancing". */
+const PROGRESS_EPSILON = 0.001;
 
 export class Engine {
   private queue: Queue;
@@ -76,6 +89,7 @@ export class Engine {
   private readonly prefetchCount: number;
   private readonly maxConsecutiveFailures: number;
   private readonly maxDownloadPolls: number;
+  private readonly maxStallPolls: number;
   private readonly now: () => number;
   private readonly unsubscribeAudio: () => void;
 
@@ -97,6 +111,13 @@ export class Engine {
   private readonly downloadTimers = new Map<QueueItemId, ReturnType<typeof setTimeout>>();
   /** How many times we've polled a still-downloading item — bounds the total wait. */
   private readonly downloadPolls = new Map<QueueItemId, number>();
+  /**
+   * Per still-downloading item: the best download fraction seen so far and how
+   * many consecutive polls it has failed to advance. Lets a download that is
+   * stuck at the same percent fail fast (stall detection) while a slow-but-moving
+   * one keeps its full budget.
+   */
+  private readonly downloadProgress = new Map<QueueItemId, { best: number; stalls: number }>();
   /** Per-current-item fallback budget (reset when a new item starts). */
   private itemFallback = { reResolved: false };
   /** Consecutive across-item failures with no successful play in between. */
@@ -113,6 +134,7 @@ export class Engine {
     this.prefetchCount = options.prefetchCount ?? 2;
     this.maxConsecutiveFailures = options.maxConsecutiveFailures ?? 6;
     this.maxDownloadPolls = options.maxDownloadPolls ?? MAX_DOWNLOAD_POLLS;
+    this.maxStallPolls = options.maxStallPolls ?? MAX_STALL_POLLS;
     this.now = options.now ?? Date.now;
     this.queue = { itemsById: {}, canonicalOrder: [], playOrder: [], currentItemId: null, repeat: "off", shuffle: false };
     this.playback = initialState(0);
@@ -359,6 +381,22 @@ export class Engine {
       this.dispatch({ type: "RESOLVE_FAILED", stamp, reason: "download timed out" });
       return;
     }
+    // Stall detection: when the provider reports a numeric progress that never
+    // advances, the torrent is dead / too poorly seeded to finish. Fail fast with
+    // an honest reason rather than spinning at the same percent to the poll cap.
+    if (resolving.progress !== undefined) {
+      const seen = this.downloadProgress.get(stamp.itemId);
+      const best = seen?.best ?? -1;
+      const advanced = resolving.progress > best + PROGRESS_EPSILON;
+      const stalls = advanced ? 0 : (seen?.stalls ?? 0) + 1;
+      this.downloadProgress.set(stamp.itemId, { best: Math.max(best, resolving.progress), stalls });
+      if (stalls >= this.maxStallPolls) {
+        this.forgetDownload(stamp.itemId);
+        this.queue = setResolution(this.queue, stamp.itemId, { status: "failed", reason: "download isn't progressing" });
+        this.dispatch({ type: "RESOLVE_FAILED", stamp, reason: "download isn't progressing" });
+        return;
+      }
+    }
     this.downloadPolls.set(stamp.itemId, polls);
     this.queue = setResolution(this.queue, stamp.itemId, {
       status: "downloading",
@@ -390,6 +428,7 @@ export class Engine {
   private forgetDownload(itemId: QueueItemId): void {
     this.clearDownloadTimer(itemId);
     this.downloadPolls.delete(itemId);
+    this.downloadProgress.delete(itemId);
   }
 
   /** Cancel every pending download re-resolve (teardown / queue reset / epoch change). */
@@ -397,6 +436,7 @@ export class Engine {
     for (const timer of this.downloadTimers.values()) clearTimeout(timer);
     this.downloadTimers.clear();
     this.downloadPolls.clear();
+    this.downloadProgress.clear();
   }
 
   /** Try a specific already-resolved stream (same item, new attempt) — the fallback walk. */

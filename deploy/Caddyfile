@@ -1,0 +1,21 @@
+# Serve the built PHONO SPA. Railway injects $PORT; bind it (no TLS here —
+# Railway terminates HTTPS at its edge). The app is a single index.html with
+# an in-app nav stack (no server routes), so every path falls back to it.
+#
+# No CSP/security headers are set here on purpose: the player injects its own
+# strict Content-Security-Policy as a <meta http-equiv> at build time (a Vite
+# plugin), so the policy travels with the HTML on any static host. See the
+# player's src/app/security/.
+:{$PORT} {
+	root * /srv
+	encode gzip zstd
+
+	# Long-cache Vite's content-hashed assets; never cache the HTML shell so a
+	# redeploy is picked up immediately.
+	@immutable path /assets/*
+	header @immutable Cache-Control "public, max-age=31536000, immutable"
+	header /index.html Cache-Control "no-cache"
+
+	try_files {path} /index.html
+	file_server
+}

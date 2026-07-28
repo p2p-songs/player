@@ -424,6 +424,17 @@ The app is a React/Vite shell at `index.html` → `src/app/main.tsx`.
   Back still exits the app), source-picker modal, Playlists tab,
   responsive/mobile layout.
 
+**Hosting (2026-07-28).** `player/deploy/` holds a `Dockerfile` (parent-context
+build — the player `link:`s the sibling `addon-sdk` + `addons`, so all three trees
+build before `vite build`), a `Caddyfile` (serves the static SPA on Railway's
+`$PORT` with SPA fallback; the player's own `<meta>` CSP travels with the HTML, so
+Caddy sets none), and `railway.json`. The default metadata addon is baked in at
+build time via `--build-arg VITE_DEFAULT_METADATA_ADDON_URL=<hosted musicmeta>`
+(already the `VITE_DEFAULT_METADATA_ADDON_URL` env the app reads — no code change).
+No stream addon is bundled (§11); the friend pastes the Bitbop URL. Full runbook:
+`addons/deploy/railway/shared-setup.md`. Image build + Caddy serving verified
+locally.
+
 Next: **P-6** (PWA) or **P-7** (accounts/sync), or fill the addon gap —
 `stream-debrid` / `stream-ytmusic` are still unbuilt, and with only
 `stream-legal` most searched tracks legitimately have no source. A small

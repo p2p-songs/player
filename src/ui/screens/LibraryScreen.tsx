@@ -85,18 +85,23 @@ export function LibraryScreen({
   };
 
   return (
-    <div className="max-w-5xl p-8 pb-12">
+    <div className="max-w-5xl p-4 pb-12 md:p-8">
       <PageTitle className="mb-6">Your Library</PageTitle>
 
       <Tabs value={filter} onValueChange={(v) => setFilter(v as Filter)}>
-        <TabsList>
-          {TABS.map((tab) => (
-            <TabsTrigger key={tab.value} value={tab.value}>
-              {tab.label}
-              <span className="font-mono text-xs tabular-nums opacity-60">{count(tab.value)}</span>
-            </TabsTrigger>
-          ))}
-        </TabsList>
+        {/* The bordered pill keeps its intrinsic width; on a phone that's wider
+            than the viewport, so let it scroll edge-to-edge instead of clipping
+            the last tab. */}
+        <div className="-mx-4 overflow-x-auto px-4 md:mx-0 md:overflow-visible md:px-0">
+          <TabsList>
+            {TABS.map((tab) => (
+              <TabsTrigger key={tab.value} value={tab.value}>
+                {tab.label}
+                <span className="font-mono text-xs tabular-nums opacity-60">{count(tab.value)}</span>
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
 
         {TABS.map((tab) => {
           const rows = tab.value === "all" ? entries : entries.filter((e) => e.kind === tab.value);

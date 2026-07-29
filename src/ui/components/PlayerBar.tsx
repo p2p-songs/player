@@ -58,7 +58,7 @@ export function PlayerBar() {
                 aria-label={`Open now playing: ${track.title}`}
                 className="group flex min-w-0 flex-1 items-center gap-2.5 text-left"
               >
-                <Vinyl seed={track.recordingId ?? track.title} artwork={track.artwork} spinning={isPlaying} size={40} />
+                <Vinyl seed={track.recordingId ?? track.title} artwork={track.artwork} spinning={isPlaying} size={52} />
                 <span className="min-w-0">
                   <span className="block truncate text-sm font-medium">{track.title}</span>
                   <span className="block truncate text-xs text-chrome-muted">{track.artist ?? "Unknown artist"}</span>
@@ -105,11 +105,6 @@ export function PlayerBar() {
             <span className="block truncate text-xs text-chrome-muted">
               {track.artist ?? "Unknown artist"}
               {track.album ? ` · ${track.album}` : ""}
-            </span>
-            {/* An explicit, if quiet, label so opening the full player isn't a
-               guess — it brightens with the rest of the control on hover/focus. */}
-            <span className="mt-0.5 flex items-center gap-1 text-[10px] tracking-wide text-chrome-muted uppercase transition-colors group-hover:text-accent">
-              <ChevronUpIcon className="size-3" /> Expand
             </span>
           </span>
         </button>

@@ -11,10 +11,11 @@ import { usePlayer } from "../viewmodels/useEngineState.js";
 import { useUi } from "../../app/store.js";
 import { useIsSaved, useToggleSaved, trackToSaved } from "../viewmodels/useLibrary.js";
 import { useVolume } from "../viewmodels/useVolume.js";
-import { Artwork } from "./common.js";
+import { Vinyl } from "./Vinyl.js";
 import { DownloadBar, PlayButton, PlayingBars, Scrubber, TransportButton } from "./transport.js";
 import { Slider as SliderPrimitive } from "radix-ui";
 import {
+  ChevronUpIcon,
   HeartIcon,
   ListMusicIcon,
   Repeat1Icon,
@@ -46,14 +47,31 @@ export function PlayerBar() {
           type="button"
           onClick={openNowPlaying}
           aria-label={`Open now playing: ${track.title}`}
-          className="group flex min-w-0 items-center gap-3 py-2 text-left"
+          title="Open the full player"
+          className="group flex min-w-0 items-center gap-3 py-1.5 text-left"
         >
-          <Artwork src={track.artwork} alt={track.title} seed={track.recordingId} size={44} />
+          {/* A live mini turntable — the same vinyl+arm as the full view, so the
+             bar previews it and reads as a door into it. It spins only while
+             playing, exactly like the big one. */}
+          <span className="relative shrink-0 transition-transform group-hover:scale-105">
+            <Vinyl seed={track.recordingId ?? track.title} artwork={track.artwork} spinning={isPlaying} size={56} />
+            <span
+              className="absolute top-0 left-0 grid place-items-center rounded-full bg-foreground/55 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+              style={{ width: 56, height: 56 }}
+            >
+              <ChevronUpIcon className="size-5 text-background" />
+            </span>
+          </span>
           <span className="min-w-0">
             <span className="block truncate text-sm font-medium group-hover:text-accent">{track.title}</span>
             <span className="block truncate text-xs text-chrome-muted">
               {track.artist ?? "Unknown artist"}
               {track.album ? ` · ${track.album}` : ""}
+            </span>
+            {/* An explicit, if quiet, label so opening the full player isn't a
+               guess — it brightens with the rest of the control on hover/focus. */}
+            <span className="mt-0.5 flex items-center gap-1 text-[10px] tracking-wide text-chrome-muted uppercase transition-colors group-hover:text-accent">
+              <ChevronUpIcon className="size-3" /> Expand
             </span>
           </span>
         </button>

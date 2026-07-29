@@ -39,9 +39,47 @@ export function PlayerBar() {
   const hasTrack = track !== undefined;
   const resolution = player.item?.resolution;
   const downloading = resolution?.status === "downloading" ? resolution : undefined;
+  const pct = durationMs && durationMs > 0 ? Math.min(100, (positionMs / durationMs) * 100) : 0;
 
   return (
-    <div className="col-span-2 grid grid-cols-[minmax(200px,1fr)_minmax(340px,2fr)_minmax(200px,1fr)] items-center gap-4 border-t-2 border-border bg-chrome px-4 text-chrome-foreground">
+    <div className="border-t-2 border-border bg-chrome text-chrome-foreground md:col-span-2">
+      {/* --- Mobile: a compact mini-player. Full controls (scrubber, shuffle,
+          volume, queue) live in the full player, one tap away on the artwork. --- */}
+      <div className="md:hidden">
+        <div className="h-0.5 w-full bg-chrome-track" aria-hidden="true">
+          <div className="h-full bg-primary transition-[width] duration-300" style={{ width: `${pct}%` }} />
+        </div>
+        <div className="flex items-center gap-1 px-3 py-2">
+          {hasTrack ? (
+            <>
+              <button
+                type="button"
+                onClick={openNowPlaying}
+                aria-label={`Open now playing: ${track.title}`}
+                className="group flex min-w-0 flex-1 items-center gap-2.5 text-left"
+              >
+                <Vinyl seed={track.recordingId ?? track.title} artwork={track.artwork} spinning={isPlaying} size={40} />
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-medium">{track.title}</span>
+                  <span className="block truncate text-xs text-chrome-muted">{track.artist ?? "Unknown artist"}</span>
+                </span>
+              </button>
+              <TransportButton label="Previous" onClick={player.prev}>
+                <SkipBackIcon className="size-5" fill="currentColor" />
+              </TransportButton>
+              <PlayButton isPlaying={isPlaying} busy={busy} onClick={player.toggle} />
+              <TransportButton label="Next" onClick={player.next}>
+                <SkipForwardIcon className="size-5" fill="currentColor" />
+              </TransportButton>
+            </>
+          ) : (
+            <div className="px-1 py-3 text-xs text-chrome-muted">Nothing playing</div>
+          )}
+        </div>
+      </div>
+
+      {/* --- Desktop: the full three-column bar. --- */}
+      <div className="hidden grid-cols-[minmax(200px,1fr)_minmax(340px,2fr)_minmax(200px,1fr)] items-center gap-4 px-4 md:grid">
       {hasTrack ? (
         <button
           type="button"
@@ -122,6 +160,7 @@ export function PlayerBar() {
           <ListMusicIcon className="size-4" />
         </TransportButton>
         <VolumeControl />
+      </div>
       </div>
     </div>
   );

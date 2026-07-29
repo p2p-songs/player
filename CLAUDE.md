@@ -420,9 +420,21 @@ The app is a React/Vite shell at `index.html` → `src/app/main.tsx`.
   `transform-origin` keeps both about the bearing). Its period is deliberately
   the same 6s as `disc`: an off-centre spindle hole swings the arm once per
   revolution, and a wobble on its own timing reads as a loose fitting instead.
+- **Responsive / mobile (2026-07-28).** The shell is mobile-first with a `md:`
+  breakpoint back to the desktop layout. Mobile: the `AppShell` is a flex column
+  (scrolling content → compact player bar → bottom nav); the left `Sidebar` is
+  `hidden md:flex` and a `BottomNav` (`md:hidden`, same shared `NAV` list) takes
+  over; `PlayerBar` renders a **compact mini-player** (mini-vinyl + title +
+  prev/play/next + a slim top progress line) with the full three-column bar as
+  `hidden md:grid` — the scrubber/shuffle/volume/queue live one tap away in the
+  full player; `NowPlayingScreen` collapses to one column (centered, a 220px
+  vinyl vs 360px — two sizes, not a CSS scale, because the record's geometry is
+  computed from `size`), and its up-next aside is `hidden md:flex`; the
+  `QueueDrawer` is full-width below `sm`. Keep new screens overflow-safe (no fixed
+  min-widths); desktop is untouched because every desktop rule is `md:`-gated.
 - **Deliberately not built:** router (nav is a stack in the UI store — browser
-  Back still exits the app), source-picker modal, Playlists tab,
-  responsive/mobile layout.
+  Back still exits the app), source-picker modal, Playlists tab; mobile queue
+  access beyond the drawer, and per-screen mobile density polish, are follow-ups.
 
 **Hosting (2026-07-28).** `player/deploy/` holds a `Dockerfile` (parent-context
 build — the player `link:`s the sibling `addon-sdk` + `addons`, so all three trees

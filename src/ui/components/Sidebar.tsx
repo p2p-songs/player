@@ -2,7 +2,8 @@
 import { useUi, type View } from "../../app/store.js";
 import { cn } from "@/lib/utils";
 
-const NAV: { view: View; icon: string; label: string }[] = [
+/** Shared by the desktop rail ({@link Sidebar}) and the mobile bar (`BottomNav`). */
+export const NAV: { view: View; icon: string; label: string }[] = [
   { view: "home", icon: "◇", label: "Home" },
   { view: "search", icon: "◎", label: "Search" },
   { view: "library", icon: "▣", label: "Library" },
@@ -10,6 +11,7 @@ const NAV: { view: View; icon: string; label: string }[] = [
   { view: "settings", icon: "⚙", label: "Settings" },
 ];
 
+/** The left rail — desktop only (the mobile shell swaps in `BottomNav`). */
 export function Sidebar() {
   const view = useUi((s) => s.view);
   const setView = useUi((s) => s.setView);
@@ -17,7 +19,7 @@ export function Sidebar() {
   return (
     <nav
       aria-label="Primary"
-      className="flex flex-col gap-6 overflow-y-auto border-r-2 border-border bg-chrome py-5 text-chrome-foreground"
+      className="hidden flex-col gap-6 overflow-y-auto border-r-2 border-border bg-chrome py-5 text-chrome-foreground md:flex"
     >
       <div className="px-5 font-head text-2xl tracking-[0.18em] text-primary">PHONO</div>
       <div className="flex flex-col">

@@ -5,6 +5,7 @@
  */
 import { useUi } from "../app/store.js";
 import { Sidebar } from "./components/Sidebar.js";
+import { BottomNav } from "./components/BottomNav.js";
 import { PlayerBar } from "./components/PlayerBar.js";
 import { PlaybackAlert } from "./components/PlaybackAlert.js";
 import { QueueDrawer } from "./components/QueueDrawer.js";
@@ -35,9 +36,12 @@ export function AppShell() {
   const top = detail[detail.length - 1];
 
   return (
-    <div className="grid h-full grid-cols-[13rem_1fr] grid-rows-[1fr_var(--player-bar-h)]">
+    // Mobile: a single column — scrolling content, then the compact player bar,
+    // then the bottom nav. Desktop (md+): the original sidebar + content grid
+    // with the player bar spanning the bottom row.
+    <div className="flex h-full flex-col md:grid md:grid-cols-[13rem_1fr] md:grid-rows-[1fr_var(--player-bar-h)]">
       <Sidebar />
-      <main className="overflow-y-auto bg-background">
+      <main className="min-h-0 flex-1 overflow-y-auto bg-background">
         {top?.kind === "album" ? (
           <AlbumScreen albumId={top.id} onBack={closeDetail} />
         ) : top?.kind === "artist" ? (
@@ -61,6 +65,7 @@ export function AppShell() {
       </main>
       <PlaybackAlert />
       <PlayerBar />
+      <BottomNav />
       <QueueDrawer />
       <NowPlayingScreen />
     </div>

@@ -16,7 +16,7 @@ export function QueueDrawer() {
   return (
     <aside
       aria-label="Queue"
-      className="fixed top-0 bottom-(--player-bar-h) right-0 z-20 flex w-85 flex-col border-l-2 border-border bg-card shadow-xl"
+      className="fixed top-0 right-0 bottom-0 z-40 flex w-full flex-col border-l-2 border-border bg-card shadow-xl sm:w-85 md:bottom-(--player-bar-h)"
     >
       <div className="flex items-center justify-between border-b-2 border-border px-4 py-3">
         <span className="font-head text-xs uppercase tracking-[0.14em]">Up next</span>

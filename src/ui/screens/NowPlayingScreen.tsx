@@ -66,9 +66,9 @@ export function NowPlayingScreen() {
       <DialogPrimitive.Portal>
         <DialogPrimitive.Content
           aria-describedby={undefined}
-          className="fixed inset-0 z-30 grid grid-cols-[1fr_22rem] bg-chrome text-chrome-foreground outline-none"
+          className="fixed inset-0 z-30 grid grid-cols-1 bg-chrome text-chrome-foreground outline-none md:grid-cols-[1fr_22rem]"
         >
-          <div className="flex min-w-0 flex-col p-8">
+          <div className="flex min-w-0 flex-col overflow-y-auto p-4 md:p-8">
             <div className="flex items-start justify-between gap-4">
               {/* Not `Dialog.Close asChild`: Slot would have to merge a ref
                   into a plain function component for no gain — `close()` is the
@@ -88,20 +88,23 @@ export function NowPlayingScreen() {
               ) : null}
             </div>
 
-            <div className="flex min-h-0 flex-1 items-center justify-center gap-12 py-8">
-              <Vinyl
-                seed={track.recordingId}
-                artwork={track.artwork}
-                spinning={isPlaying}
-                size={360}
-              />
+            <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-6 py-6 md:flex-row md:gap-12 md:py-8">
+              {/* Two sizes rather than a CSS scale, because the record's pixels
+                  (grooves, arm geometry) are computed from `size`. Only one is
+                  ever shown. */}
+              <span className="md:hidden">
+                <Vinyl seed={track.recordingId} artwork={track.artwork} spinning={isPlaying} size={220} />
+              </span>
+              <span className="hidden md:inline-block">
+                <Vinyl seed={track.recordingId} artwork={track.artwork} spinning={isPlaying} size={360} />
+              </span>
 
-              <div className="flex min-w-0 max-w-md flex-col gap-3">
+              <div className="flex min-w-0 max-w-md flex-col items-center gap-3 text-center md:items-start md:text-left">
                 <div className="font-head text-[11px] uppercase tracking-[0.2em] text-chrome-muted">Now spinning</div>
                 {/* Doubles as the dialog's accessible name — the track *is* the
                     title of this view, so there is nothing to duplicate. */}
                 <DialogPrimitive.Title asChild>
-                  <h1 className="font-head text-5xl leading-[1.05] tracking-tight break-words">{track.title}</h1>
+                  <h1 className="font-head text-3xl leading-[1.05] tracking-tight break-words md:text-5xl">{track.title}</h1>
                 </DialogPrimitive.Title>
                 <div className="text-lg text-accent">
                   {track.artist ?? "Unknown artist"}
@@ -171,7 +174,7 @@ export function NowPlayingScreen() {
             </div>
           </div>
 
-          <aside className="flex min-h-0 flex-col border-l-2 border-border bg-background text-foreground">
+          <aside className="hidden min-h-0 flex-col border-l-2 border-border bg-background text-foreground md:flex">
             <div className="border-b-2 border-border px-4 py-3 font-head text-xs uppercase tracking-[0.14em]">
               Up next
             </div>

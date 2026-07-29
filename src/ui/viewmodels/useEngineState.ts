@@ -39,6 +39,10 @@ export function usePlayer() {
     const item = id ? state.queue.itemsById[id] : undefined;
     const playback = state.playback;
     const positionMs = "positionMs" in playback ? (playback.positionMs ?? 0) : 0;
+    // The catalog metadata's duration is authoritative when present (an album
+    // play), but a search hit carries none — fall back to the media element's
+    // real duration, which the engine threads onto playback state.
+    const playbackDurationMs = "durationMs" in playback ? playback.durationMs : undefined;
     const resolution = item?.resolution;
     return {
       item,
@@ -46,7 +50,7 @@ export function usePlayer() {
       status: playback.status,
       isPlaying: playback.status === "playing",
       positionMs,
-      durationMs: item?.track.durationMs,
+      durationMs: item?.track.durationMs ?? playbackDurationMs,
       url: resolution?.status === "resolved" ? resolution.url : undefined,
     };
   }, [state]);
@@ -65,8 +69,8 @@ export function usePlayer() {
     setShuffle: (on: boolean) => engine.setShuffle(on),
     setRepeat: engine.setRepeat.bind(engine),
     selectItem: (id: QueueItemId) => engine.selectItem(id),
-    playTracks: (tracks: TrackRef[]) => {
-      engine.setQueue(tracks);
+    playTracks: (tracks: TrackRef[], opts?: { shuffle?: boolean }) => {
+      engine.setQueue(tracks, opts?.shuffle ? { shuffle: true } : {});
       engine.play();
     },
   };

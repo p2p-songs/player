@@ -23,6 +23,20 @@ function makeEngine(count: number, options: EngineOptions = {}) {
 const playback = (e: Engine) => e.getState().playback;
 const res = (e: Engine, id: string) => e.getState().queue.itemsById[id]!.resolution;
 
+describe("shuffle-play (album Shuffle button)", () => {
+  it("setQueue({shuffle}) shuffles the play order and starts on a random track", () => {
+    const engine = new Engine(new FakeResolver(), new FakeAudio(), { idGen: counterIdGen(), rng: () => 0.42 });
+    engine.setQueue(tracks(5), { shuffle: true });
+    const q = engine.getState().queue;
+    expect(q.shuffle).toBe(true);
+    // A permutation of the canonical order, not a reset-to-off identity list.
+    expect([...q.playOrder].sort()).toEqual([...q.canonicalOrder].sort());
+    // floor(0.42 * 5) = 2 → starts on the 3rd track, not always track 1.
+    expect(q.currentItemId).toBe(q.canonicalOrder[2]);
+    expect(q.playOrder[0]).toBe(q.canonicalOrder[2]);
+  });
+});
+
 describe("happy path + prefetch", () => {
   it("play resolves → buffers → plays, then prefetches upcoming items", async () => {
     const { engine, audio } = makeEngine(3);

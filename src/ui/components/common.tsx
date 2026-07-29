@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { PlayIcon } from "lucide-react";
 import { ProceduralArt } from "./ProceduralArt.js";
+import { NowPlayingBars } from "./primitives.js";
 import { cn } from "@/lib/utils";
 
 export function formatTime(ms: number | undefined): string {
@@ -75,20 +76,36 @@ export function PlayableArtwork({
   alt,
   size = 40,
   seed,
+  playing,
 }: {
   src?: string | undefined;
   alt: string;
   size?: number;
   seed?: string | undefined;
+  /** Defined when this is the current track: a persistent equalizer overlay
+   *  (animated when `true`, still when `false`) instead of the hover play badge. */
+  playing?: boolean | undefined;
 }) {
+  const isCurrent = playing !== undefined;
   return (
     <span className="relative shrink-0" style={{ width: size, height: size }}>
       <Artwork src={src} alt={alt} size={size} seed={seed} />
       <span
-        className="absolute inset-0 grid place-items-center bg-foreground/65 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+        className={cn(
+          "absolute inset-0 grid place-items-center bg-foreground/65 transition-opacity",
+          isCurrent
+            ? "opacity-100"
+            : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
+        )}
         aria-hidden="true"
       >
-        <PlayIcon className="size-4 text-background" fill="currentColor" />
+        {isCurrent ? (
+          <span className="text-accent">
+            <NowPlayingBars animated={playing} />
+          </span>
+        ) : (
+          <PlayIcon className="size-4 text-background" fill="currentColor" />
+        )}
       </span>
     </span>
   );

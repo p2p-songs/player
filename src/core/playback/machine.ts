@@ -28,8 +28,8 @@ export type PlaybackState =
   | { status: "idle"; epoch: number }
   | { status: "resolving"; epoch: number; itemId: QueueItemId; attemptId: number }
   | { status: "buffering"; epoch: number; itemId: QueueItemId; attemptId: number; url: string }
-  | { status: "playing"; epoch: number; itemId: QueueItemId; attemptId: number; url: string; positionMs: number }
-  | { status: "paused"; epoch: number; itemId: QueueItemId; attemptId: number; url: string; positionMs: number }
+  | { status: "playing"; epoch: number; itemId: QueueItemId; attemptId: number; url: string; positionMs: number; durationMs?: number }
+  | { status: "paused"; epoch: number; itemId: QueueItemId; attemptId: number; url: string; positionMs: number; durationMs?: number }
   | { status: "ended"; epoch: number; itemId: QueueItemId }
   | { status: "failed"; epoch: number; itemId: QueueItemId; reason?: string }
   | { status: "error"; epoch: number; reason?: string };
@@ -47,7 +47,7 @@ export type PlaybackEvent =
   | { type: "LOAD_FAILED"; stamp: Stamp; reason?: string }
   | { type: "PLAY" }
   | { type: "PAUSE" }
-  | { type: "POSITION"; ms: number }
+  | { type: "POSITION"; ms: number; durationMs?: number }
   | { type: "ENDED" }
   /** Engine: circuit breaker tripped — terminal, actionable error (§4b). */
   | { type: "TERMINATE"; reason?: string }
@@ -114,19 +114,20 @@ export function transition(state: PlaybackState, event: PlaybackEvent): Playback
 
     case "PLAY":
       if (state.status === "paused") {
-        return { status: "playing", epoch: state.epoch, itemId: state.itemId, attemptId: state.attemptId, url: state.url, positionMs: state.positionMs };
+        return { status: "playing", epoch: state.epoch, itemId: state.itemId, attemptId: state.attemptId, url: state.url, positionMs: state.positionMs, ...(state.durationMs !== undefined ? { durationMs: state.durationMs } : {}) };
       }
       return state;
 
     case "PAUSE":
       if (state.status === "playing") {
-        return { status: "paused", epoch: state.epoch, itemId: state.itemId, attemptId: state.attemptId, url: state.url, positionMs: state.positionMs };
+        return { status: "paused", epoch: state.epoch, itemId: state.itemId, attemptId: state.attemptId, url: state.url, positionMs: state.positionMs, ...(state.durationMs !== undefined ? { durationMs: state.durationMs } : {}) };
       }
       return state;
 
     case "POSITION":
       if (state.status === "playing" || state.status === "paused") {
-        return { ...state, positionMs: event.ms };
+        // Keep the last known duration if this tick didn't carry one.
+        return { ...state, positionMs: event.ms, ...(event.durationMs !== undefined ? { durationMs: event.durationMs } : {}) };
       }
       return state;
 

@@ -62,6 +62,15 @@ describe("HtmlAudioBackend — load & playback", () => {
     expect(events).toContainEqual({ type: "ended", token: "tok1" });
   });
 
+  it("carries the element's real duration on position once metadata is known", () => {
+    const { a, backend, events } = setup();
+    backend.load("https://cdn/x.flac", "tok1");
+    a.emitTimeUpdate(3); // duration still NaN (metadata not loaded)
+    expect(events).toContainEqual({ type: "position", token: "tok1", ms: 3000 });
+    a.emitTimeUpdate(4, 214.7); // metadata now known
+    expect(events).toContainEqual({ type: "position", token: "tok1", ms: 4000, durationMs: 214700 });
+  });
+
   it("maps a media error to an 'error' event with a reason", () => {
     const { a, backend, events } = setup();
     backend.load("https://cdn/x.flac", "tok1");

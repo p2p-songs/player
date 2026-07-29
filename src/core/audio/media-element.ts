@@ -10,6 +10,8 @@
 export interface MediaElementLike {
   src: string;
   currentTime: number;
+  /** HTMLMediaElement.duration — seconds, `NaN` until metadata loads, `Infinity` for a live stream. */
+  readonly duration: number;
   /** 0..1; the crossfade path automates this instead of routing through Web Audio (§4c). */
   volume: number;
   preload: string;

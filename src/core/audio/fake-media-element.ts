@@ -10,6 +10,7 @@ import type { MediaElementLike } from "./media-element.js";
 export class FakeMediaElement implements MediaElementLike {
   src = "";
   currentTime = 0;
+  duration = NaN; // real elements report NaN until metadata loads
   volume = 1;
   preload = "";
   readyState = 0;
@@ -63,8 +64,9 @@ export class FakeMediaElement implements MediaElementLike {
     this.error = { code };
     this.fire("error");
   }
-  emitTimeUpdate(seconds: number): void {
+  emitTimeUpdate(seconds: number, duration?: number): void {
     this.currentTime = seconds;
+    if (duration !== undefined) this.duration = duration;
     this.fire("timeupdate");
   }
 }

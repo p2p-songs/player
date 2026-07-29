@@ -46,7 +46,7 @@ export function SearchScreen({
   const query = useUi((s) => s.searchQuery);
   const setQuery = useUi((s) => s.setSearchQuery);
   const { data: addons } = useInstalledAddons();
-  const { playTracks } = usePlayer();
+  const { playTracks, track: currentTrack, isPlaying } = usePlayer();
 
   const hasCatalogAddon = (addons ?? []).some((a) => a.online && a.resources.includes("catalog"));
   const hasStreamAddon = (addons ?? []).some((a) => a.online && a.resources.includes("stream"));
@@ -139,6 +139,8 @@ export function SearchScreen({
                 onOpenArtist={onOpenArtist}
                 onOpenAlbum={onOpenAlbum}
                 onPlay={(track) => playTracks([previewToTrack(track)])}
+                currentId={currentTrack?.recordingId}
+                isPlaying={isPlaying}
               />
             ))}
           </Rows>
@@ -183,15 +185,20 @@ function ResultRow({
   onOpenArtist,
   onOpenAlbum,
   onPlay,
+  currentId,
+  isPlaying,
 }: {
   item: MetaPreview;
   onOpenArtist: (id: string, name: string) => void;
   onOpenAlbum: (id: string, name: string) => void;
   onPlay: (item: MetaPreview) => void;
+  currentId: string | undefined;
+  isPlaying: boolean;
 }) {
   const isTrack = item.type === "track";
   const isArtist = item.type === "artist";
   const isAlbum = item.type === "album";
+  const isCurrent = isTrack && item.id === currentId;
   const onClick = isTrack
     ? () => onPlay(item)
     : isArtist
@@ -200,15 +207,15 @@ function ResultRow({
   const artist = item.description ?? "Unknown artist";
   const sub = isArtist ? "Artist" : isTrack ? `Song · ${artist}` : `Album · ${artist}`;
   return (
-    <Row onClick={onClick}>
+    <Row onClick={onClick} current={isCurrent}>
       {isTrack ? (
-        <PlayableArtwork src={item.poster} alt={item.name} seed={item.id} size={38} />
+        <PlayableArtwork src={item.poster} alt={item.name} seed={item.id} size={38} playing={isCurrent ? isPlaying : undefined} />
       ) : isAlbum ? (
         <AlbumArtwork src={item.poster} alt={item.name} seed={item.id} />
       ) : (
         <Artwork src={item.poster} alt={item.name} seed={item.id} size={38} round />
       )}
-      <RowMain title={item.name} sub={sub} />
+      <RowMain title={item.name} sub={sub} current={isCurrent} />
       {isTrack ? null : (
         <RowTime>
           <ChevronRightIcon className="size-4" />

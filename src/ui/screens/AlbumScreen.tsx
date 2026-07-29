@@ -8,11 +8,15 @@ import { Button } from "@/components/ui/button";
 
 export function AlbumScreen({ albumId, onBack }: { albumId: string; onBack: () => void }) {
   const meta = useMeta("album", albumId);
-  const { playTracks, setShuffle } = usePlayer();
+  const { playTracks, toggle, track: currentTrack, isPlaying } = usePlayer();
   const { data: saved } = useIsSaved(albumId);
   const toggleSaved = useToggleSaved();
   const tracks = albumToTracks(meta.data);
   const totalMs = tracks.reduce((sum, t) => sum + (t.durationMs ?? 0), 0);
+  // Is *this* album the one playing? Then the Play button becomes a pause/resume
+  // toggle instead of restarting it, and says so.
+  const albumIsCurrent = currentTrack !== undefined && tracks.some((t) => t.recordingId === currentTrack.recordingId);
+  const albumIsPlaying = albumIsCurrent && isPlaying;
 
   return (
     <div className="max-w-5xl p-8 pb-12">
@@ -46,16 +50,17 @@ export function AlbumScreen({ albumId, onBack }: { albumId: string; onBack: () =
                 {totalMs ? ` · ${Math.round(totalMs / 60000)} min` : ""}
               </Muted>
               <div className="mt-2 flex gap-2">
-                <Button onClick={() => playTracks(tracks)} disabled={tracks.length === 0}>
-                  ▶ Play
+                <Button
+                  onClick={() => (albumIsCurrent ? toggle() : playTracks(tracks))}
+                  disabled={tracks.length === 0}
+                  aria-pressed={albumIsPlaying}
+                >
+                  {albumIsPlaying ? "❚❚ Pause" : albumIsCurrent ? "▶ Resume" : "▶ Play"}
                 </Button>
                 <Button
                   variant="outline"
                   disabled={tracks.length === 0}
-                  onClick={() => {
-                    setShuffle(true);
-                    playTracks(tracks);
-                  }}
+                  onClick={() => playTracks(tracks, { shuffle: true })}
                 >
                   ⤨ Shuffle
                 </Button>
@@ -85,13 +90,26 @@ export function AlbumScreen({ albumId, onBack }: { albumId: string; onBack: () =
             <StateBlock icon="♪" title="No track listing" message="This addon didn't provide tracks for the album." />
           ) : (
             <Rows>
-              {tracks.map((track, i) => (
-                <Row key={`${track.recordingId}-${i}`} onClick={() => playTracks(tracks.slice(i))}>
-                  <RowIndex playable>{i + 1}</RowIndex>
-                  <RowMain title={track.title} sub={track.artist ?? meta.data?.artistName ?? ""} />
-                  <RowTime>{formatTime(track.durationMs)}</RowTime>
-                </Row>
-              ))}
+              {tracks.map((track, i) => {
+                const isCurrent = currentTrack?.recordingId === track.recordingId;
+                return (
+                  <Row
+                    key={`${track.recordingId}-${i}`}
+                    current={isCurrent}
+                    onClick={() => playTracks(tracks.slice(i))}
+                  >
+                    <RowIndex playable state={isCurrent ? (isPlaying ? "playing" : "paused") : undefined}>
+                      {i + 1}
+                    </RowIndex>
+                    <RowMain
+                      title={track.title}
+                      sub={track.artist ?? meta.data?.artistName ?? ""}
+                      current={isCurrent}
+                    />
+                    <RowTime>{formatTime(track.durationMs)}</RowTime>
+                  </Row>
+                );
+              })}
             </Rows>
           )}
         </>

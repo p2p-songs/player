@@ -15,7 +15,7 @@ import { Card, CardContent } from "@/components/ui/card";
 export function HomeScreen() {
   const { repository } = useServices();
   const { data: addons, isLoading: addonsLoading } = useInstalledAddons();
-  const { playTracks } = usePlayer();
+  const { playTracks, track: currentTrack, isPlaying } = usePlayer();
   const setView = useUi((s) => s.setView);
 
   const history = useQuery({
@@ -56,17 +56,21 @@ export function HomeScreen() {
         <StateBlock icon="♪" title="Nothing played yet" message="Songs you play will show up here." />
       ) : (
         <Rows>
-          {(history.data ?? []).map((event) => (
-            <Row key={event.id} onClick={() => playTracks([event.track])}>
-              <PlayableArtwork
-                src={event.track.artwork}
-                alt={event.track.title}
-                seed={event.track.recordingId}
-                size={38}
-              />
-              <RowMain title={event.track.title} sub={event.track.artist ?? "Unknown artist"} />
-            </Row>
-          ))}
+          {(history.data ?? []).map((event) => {
+            const isCurrent = currentTrack?.recordingId === event.track.recordingId;
+            return (
+              <Row key={event.id} current={isCurrent} onClick={() => playTracks([event.track])}>
+                <PlayableArtwork
+                  src={event.track.artwork}
+                  alt={event.track.title}
+                  seed={event.track.recordingId}
+                  size={38}
+                  playing={isCurrent ? isPlaying : undefined}
+                />
+                <RowMain title={event.track.title} sub={event.track.artist ?? "Unknown artist"} current={isCurrent} />
+              </Row>
+            );
+          })}
         </Rows>
       )}
     </div>

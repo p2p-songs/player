@@ -218,7 +218,17 @@ export class HtmlAudioBackend implements AudioBackend {
     };
     const onTimeUpdate = () => {
       if (slot.token && slot === this.active) {
-        this.emit({ type: "position", token: slot.token, ms: Math.round(el.currentTime * 1000) });
+        // The element's real duration (NaN/±Infinity until metadata loads, or for
+        // a live stream) — carried so a track whose catalog metadata had no
+        // duration still gets a working scrubber. Omitted while not yet finite.
+        const d = el.duration;
+        const durationMs = Number.isFinite(d) && d > 0 ? Math.round(d * 1000) : undefined;
+        this.emit({
+          type: "position",
+          token: slot.token,
+          ms: Math.round(el.currentTime * 1000),
+          ...(durationMs !== undefined ? { durationMs } : {}),
+        });
       }
     };
     el.addEventListener("canplay", onCanPlay);

@@ -13,7 +13,11 @@ export type AudioEvent =
   | { type: "loaded"; token: string }
   | { type: "error"; token: string; reason?: string }
   | { type: "ended"; token: string }
-  | { type: "position"; token: string; ms: number };
+  // `durationMs` is the media element's *real* duration, known once metadata
+  // loads. It rides on position so a track whose catalog metadata carried no
+  // duration (a search hit) still gets a working scrubber instead of a stuck
+  // 0:00 / --:-- with a full bar. Omitted until the element reports a finite one.
+  | { type: "position"; token: string; ms: number; durationMs?: number };
 
 export interface AudioBackend {
   /** Load the active element with `url`, tagged with `token`; buffers to canplay. */

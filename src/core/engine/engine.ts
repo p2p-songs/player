@@ -175,7 +175,14 @@ export class Engine {
 
   /** Replace the queue. Does not auto-play; call `play()` to start. */
   setQueue(tracks: TrackRef[], options: CreateQueueOptions = {}): void {
-    this.queue = createQueue(tracks, this.idGen, { rng: this.rng, ...options });
+    // A fresh shuffle-play (e.g. the album "Shuffle" button) should start on a
+    // random track, not always track 1 with the rest shuffled behind it. Only
+    // when the caller didn't pin a start itself.
+    const startIndex =
+      options.shuffle && options.startIndex === undefined && tracks.length > 0
+        ? Math.floor(this.rng() * tracks.length)
+        : options.startIndex;
+    this.queue = createQueue(tracks, this.idGen, { rng: this.rng, ...options, ...(startIndex !== undefined ? { startIndex } : {}) });
     this.epoch += 1;
     this.scheduler.cancelAll();
     this.cancelDownloadPolls();
@@ -596,7 +603,9 @@ export class Engine {
         if (stamp && this.isCurrentStamp(stamp)) this.dispatch({ type: "ENDED" });
         break;
       case "position":
-        if (stamp && this.isCurrentStamp(stamp)) this.dispatch({ type: "POSITION", ms: event.ms });
+        if (stamp && this.isCurrentStamp(stamp)) {
+          this.dispatch({ type: "POSITION", ms: event.ms, ...(event.durationMs !== undefined ? { durationMs: event.durationMs } : {}) });
+        }
         break;
     }
   }

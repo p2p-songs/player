@@ -82,7 +82,15 @@ export function Row({
     <div
       className={cn(
         "group relative flex w-full items-center border-b-2 border-border transition-colors last:border-b-0",
-        current ? "bg-accent" : onClick ? "hover:bg-muted" : undefined,
+        // The current track: a steady tint plus an inset accent bar down its
+        // leading edge (inset shadow, so it adds no width and rows stay aligned).
+        // Non-current rows tint only on hover — so the playing row always stands
+        // apart, not just under the pointer.
+        current
+          ? "bg-muted shadow-[inset_4px_0_0_0_var(--accent)]"
+          : onClick
+            ? "hover:bg-muted"
+            : undefined,
         className,
       )}
     >
@@ -136,8 +144,44 @@ export function RowAction({
  * A track number. Where the row plays, it swaps for a play badge on hover — the
  * artwork-badge affordance for rows that have no artwork to put it on.
  */
-export function RowIndex({ children, playable = false }: { children: ReactNode; playable?: boolean }) {
+/**
+ * A tiny equalizer that marks the track a list is *currently* playing — the
+ * persistent "this one is playing" cue the hover play-badge could never be
+ * (it looks identical on every row the pointer touches). Animated while playing,
+ * held still when paused. `currentColor`, so it reads on a highlighted row too.
+ */
+export function NowPlayingBars({ animated = true, className }: { animated?: boolean; className?: string }) {
+  return (
+    <span className={cn("flex h-3.5 items-end justify-center gap-[2px]", className)} aria-hidden="true">
+      {[0, 200, 400].map((delay, i) => (
+        <span
+          key={delay}
+          className={cn("w-[3px] origin-bottom bg-current", animated && "animate-vu")}
+          style={{ height: `${[9, 14, 7][i]}px`, animationDelay: `${delay}ms` }}
+        />
+      ))}
+    </span>
+  );
+}
+
+export function RowIndex({
+  children,
+  playable = false,
+  state,
+}: {
+  children: ReactNode;
+  playable?: boolean;
+  /** When this row is the current track: show the equalizer instead of the number. */
+  state?: "playing" | "paused";
+}) {
   const base = "w-6 shrink-0 font-mono text-xs tabular-nums text-muted-foreground";
+  if (state) {
+    return (
+      <span className={cn(base, "grid place-items-center text-accent")}>
+        <NowPlayingBars animated={state === "playing"} />
+      </span>
+    );
+  }
   if (!playable) return <span className={base}>{children}</span>;
   return (
     <span className={cn(base, "relative grid place-items-center")}>
@@ -152,10 +196,10 @@ export function RowIndex({ children, playable = false }: { children: ReactNode; 
 }
 
 /** Title over subtitle, both truncating — the shape of nearly every row. */
-export function RowMain({ title, sub }: { title: ReactNode; sub?: ReactNode }) {
+export function RowMain({ title, sub, current = false }: { title: ReactNode; sub?: ReactNode; current?: boolean }) {
   return (
     <span className="min-w-0 flex-1">
-      <span className="block truncate font-medium">{title}</span>
+      <span className={cn("block truncate font-medium", current && "text-accent")}>{title}</span>
       {sub ? <span className="block truncate text-sm text-muted-foreground">{sub}</span> : null}
     </span>
   );

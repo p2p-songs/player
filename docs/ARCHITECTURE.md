@@ -1111,18 +1111,28 @@ databases upgrade).
 [`REVIEW_CHECKLIST.md`](https://github.com/p2p-songs/.github/blob/main/docs/REVIEW_CHECKLIST.md)
 §1/§7/§8 for the player specifically.)
 
-- **Neutrality:** still no bundled/default-installed **stream** addon, and no
-  bundled credentials — neutrality governs the *stream plane*. Stream addons are
-  added only by user-pasted manifest URL; the player never has its *own* debrid
-  account. A **metadata** addon is the one permitted default: a MusicBrainz
+- **Neutrality:** the *shipped/public* build bundles no **stream** addon and no
+  credentials — neutrality governs the *stream plane*. Stream addons are added
+  only by user-pasted manifest URL; the distributed player never has its *own*
+  debrid account. A **metadata** addon is a permitted default: a MusicBrainz
   catalogue is public reference data (entity-typed ids, names, posters — no
   hashes, no sources), so pre-installing one cannot steer anyone to a content
   source. It is seeded through the *same* `AddonCollection.install(manifestUrl)`
   path (no engine-baked search, no addon package at runtime — so "the player
   depends on no addon at runtime" still holds), once, and a user's removal
   sticks. The URL is deployment config (`VITE_DEFAULT_METADATA_ADDON_URL`); unset
-  seeds nothing. See `app/default-addons.ts`. (Refines master plan §3 — the
-  stream-plane rule is unchanged.)
+  seeds nothing. See `app/default-addons.ts`. (Refines master plan §3.)
+  - **Self-host stream override (`VITE_DEFAULT_STREAM_ADDON_URL`):** a *private*
+    deployment may pre-seed a **stream** addon too, so a known audience gets an
+    instance with e.g. Bitbop already wired in to the operator's own
+    credentials. This does **not** weaken the invariant above: it is **off by
+    default**, carries **no value in the repo**, so the shipped/public image
+    still bundles nothing — the *distributed* player stays neutral. It seeds
+    through the same install path, once, removal sticks, and because the URL is
+    credential-bearing `saveAddon` marks it `configured` and the UI redacts it
+    (§6a). The baked URL is inlined into the JS bundle, so it is only set on an
+    instance whose users would be handed the install URL anyway — never on a
+    public image. Same `app/default-addons.ts`, separate seed marker.
   - **The default metadata addon now serves a *curated* catalogue** (Meilisearch,
     built offline from MusicBrainz; see `.github/docs/CATALOG_PIPELINE.md`), not
     all of recorded music. Both player-side increments are **done**: a **single

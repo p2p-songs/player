@@ -89,19 +89,20 @@ export function LibraryScreen({
       <PageTitle className="mb-6">Your Library</PageTitle>
 
       <Tabs value={filter} onValueChange={(v) => setFilter(v as Filter)}>
-        {/* The bordered pill keeps its intrinsic width; on a phone that's wider
-            than the viewport, so let it scroll edge-to-edge instead of clipping
-            the last tab. */}
-        <div className="-mx-4 overflow-x-auto px-4 md:mx-0 md:overflow-visible md:px-0">
-          <TabsList>
-            {TABS.map((tab) => (
-              <TabsTrigger key={tab.value} value={tab.value}>
-                {tab.label}
-                <span className="font-mono text-xs tabular-nums opacity-60">{count(tab.value)}</span>
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </div>
+        {/* Four tabs don't fit one phone-width row, so wrap them into a 2×2
+            grid inside the same bordered card on mobile; the desktop pill keeps
+            its natural single row. The card's height is pinned by a
+            `group-data-horizontal` variant, so releasing it needs that same
+            prefix — a plain `h-auto` leaves the card one row tall and the second
+            row spills outside its border. */}
+        <TabsList className="grid w-full grid-cols-2 gap-1 group-data-horizontal/tabs:h-auto md:inline-flex md:w-fit md:gap-0 md:group-data-horizontal/tabs:h-11">
+          {TABS.map((tab) => (
+            <TabsTrigger key={tab.value} value={tab.value}>
+              {tab.label}
+              <span className="font-mono text-xs tabular-nums opacity-60">{count(tab.value)}</span>
+            </TabsTrigger>
+          ))}
+        </TabsList>
 
         {TABS.map((tab) => {
           const rows = tab.value === "all" ? entries : entries.filter((e) => e.kind === tab.value);

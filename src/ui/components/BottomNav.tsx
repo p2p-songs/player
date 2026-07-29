@@ -29,9 +29,7 @@ export function BottomNav() {
               active ? "text-accent" : "text-chrome-muted hover:text-chrome-foreground",
             )}
           >
-            <span className="text-base leading-none" aria-hidden="true">
-              {item.icon}
-            </span>
+            <item.icon className="size-5" aria-hidden="true" />
             {item.label}
           </button>
         );

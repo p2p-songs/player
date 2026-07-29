@@ -19,7 +19,7 @@ export function AlbumScreen({ albumId, onBack }: { albumId: string; onBack: () =
   const albumIsPlaying = albumIsCurrent && isPlaying;
 
   return (
-    <div className="max-w-5xl p-8 pb-12">
+    <div className="max-w-5xl p-4 pb-12 md:p-8">
       <Button size="sm" variant="outline" onClick={onBack} className="mb-5">
         ‹ Back
       </Button>
@@ -39,17 +39,17 @@ export function AlbumScreen({ albumId, onBack }: { albumId: string; onBack: () =
         />
       ) : (
         <>
-          <div className="mb-6 flex items-end gap-5">
+          <div className="mb-6 flex flex-col items-start gap-5 sm:flex-row sm:items-end">
             <Artwork src={meta.data.poster} alt={meta.data.name} seed={meta.data.id} size={168} />
-            <div className="flex flex-col gap-1.5">
-              <PageTitle>{meta.data.name}</PageTitle>
+            <div className="flex min-w-0 flex-col gap-1.5">
+              <PageTitle className="break-words">{meta.data.name}</PageTitle>
               <Muted>
                 {meta.data.artistName ?? "Unknown artist"}
                 {meta.data.releaseDate ? ` · ${meta.data.releaseDate.slice(0, 4)}` : ""}
                 {tracks.length ? ` · ${tracks.length} tracks` : ""}
                 {totalMs ? ` · ${Math.round(totalMs / 60000)} min` : ""}
               </Muted>
-              <div className="mt-2 flex gap-2">
+              <div className="mt-2 flex flex-wrap gap-2">
                 <Button
                   onClick={() => (albumIsCurrent ? toggle() : playTracks(tracks))}
                   disabled={tracks.length === 0}

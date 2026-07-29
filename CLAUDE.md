@@ -25,14 +25,19 @@ starting work. The registry owns current sign-off and supersession; do not rely
 only on issue notifications.
 
 ## Invariants this repo must hold (see `.github`'s `docs/REVIEW_CHECKLIST.md` §1, §7, §8 and `docs/ARCHITECTURE.md` §11)
-- Never bundle, default-install, or hardcode any specific **stream** addon
-  (including `stream-debrid`), and never bundle credentials — neutrality
-  governs the *stream plane*. Stream addons are installed exclusively by the
-  user pasting a manifest URL. **One exception:** a default *metadata* addon
-  (MusicBrainz catalogue — public data, no sources) may be seeded, through the
-  ordinary `install(manifestUrl)` path, once, with removal respected. See
-  `app/default-addons.ts` and ARCHITECTURE §11. This is what keeps this repo as
-  neutral as Stremio-the-app (which likewise bundles only Cinemeta).
+- The *shipped/public* build bundles or hardcodes no specific **stream** addon
+  (including `stream-debrid`) and no credentials — neutrality governs the
+  *stream plane*. Stream addons are installed by the user pasting a manifest
+  URL. **Two deployment-config defaults**, both off unless a build sets their
+  URL, seeded through the ordinary `install(manifestUrl)` path once with removal
+  respected (`app/default-addons.ts`, ARCHITECTURE §11): (1) a default
+  *metadata* addon (`VITE_DEFAULT_METADATA_ADDON_URL`) — public catalogue data,
+  no sources; (2) a **self-host stream override** (`VITE_DEFAULT_STREAM_ADDON_URL`)
+  for a *private* instance pre-seeding e.g. Bitbop to its operator's own
+  credentials. (2) carries no value in the repo, so the distributed player stays
+  neutral (as neutral as Stremio, which bundles only Cinemeta); when a private
+  build sets it the URL is credential-bearing and inlined into the bundle, so
+  it's only for an audience you'd hand the install URL to.
 - The player never has its own debrid account and never bundles credentials.
   BUT a *configured* addon's manifest URL contains the user's debrid key, and
   the player necessarily holds it — so configured URLs are treated as secrets
@@ -443,6 +448,10 @@ build before `vite build`), a `Caddyfile` (serves the static SPA on Railway's
 Caddy sets none), and `railway.json`. The default metadata addon is baked in at
 build time via `--build-arg VITE_DEFAULT_METADATA_ADDON_URL=<hosted musicmeta>`
 (already the `VITE_DEFAULT_METADATA_ADDON_URL` env the app reads — no code change).
+A private instance may *also* pre-seed a stream addon with
+`--build-arg VITE_DEFAULT_STREAM_ADDON_URL=<bitbop install URL>` (self-host
+override, §11) — off by default, credential-bearing when set (inlined into the
+bundle), never on a public image. See `addons/deploy/railway/shared-setup.md`.
 No stream addon is bundled (§11); the friend pastes the Bitbop URL. Full runbook:
 `addons/deploy/railway/shared-setup.md`. Image build + Caddy serving verified
 locally.

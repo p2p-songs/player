@@ -13,6 +13,13 @@
 # The default **metadata** addon URL is baked in at build time (ARCHITECTURE §11):
 # it seeds musicmeta through the ordinary install path, and the player still
 # bundles no stream addon and no credentials. Leave the arg empty to seed nothing.
+#
+# A private deployment may ALSO pre-seed a **stream** addon (self-host operator
+# override, §11) so a known audience gets a phono with e.g. Bitbop already wired
+# in — pass VITE_DEFAULT_STREAM_ADDON_URL. That URL is CREDENTIAL-BEARING and is
+# inlined into the JS bundle: only set it on an instance whose users you'd hand
+# the install URL to anyway, and never bake it into a public image. Empty by
+# default → the image bundles no stream addon (the neutral, shareable build).
 
 # ---- build stage ----
 FROM --platform=$BUILDPLATFORM node:22-slim AS build
@@ -31,9 +38,12 @@ RUN cd addons && pnpm install --frozen-lockfile && pnpm -r build
 
 # Then the player itself.
 COPY player/ ./player/
-# Vite inlines VITE_* at build time, so the default addon URL must be present now.
+# Vite inlines VITE_* at build time, so the default addon URLs must be present
+# now. The stream default is empty unless a private build passes it (see above).
 ARG VITE_DEFAULT_METADATA_ADDON_URL=""
 ENV VITE_DEFAULT_METADATA_ADDON_URL=$VITE_DEFAULT_METADATA_ADDON_URL
+ARG VITE_DEFAULT_STREAM_ADDON_URL=""
+ENV VITE_DEFAULT_STREAM_ADDON_URL=$VITE_DEFAULT_STREAM_ADDON_URL
 RUN cd player && pnpm install --frozen-lockfile && pnpm build
 
 # ---- runtime stage: static files behind Caddy ----

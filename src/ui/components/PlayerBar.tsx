@@ -58,7 +58,13 @@ export function PlayerBar() {
                 aria-label={`Open now playing: ${track.title}`}
                 className="group flex min-w-0 flex-1 items-center gap-2.5 text-left"
               >
-                <Vinyl seed={track.recordingId ?? track.title} artwork={track.artwork} spinning={isPlaying} size={52} />
+                <Vinyl
+                  seed={track.recordingId ?? track.title}
+                  artwork={track.artwork}
+                  spinning={isPlaying}
+                  size={52}
+                  labelInset="22%"
+                />
                 <span className="min-w-0">
                   <span className="block truncate text-sm font-medium">{track.title}</span>
                   <span className="block truncate text-xs text-chrome-muted">{track.artist ?? "Unknown artist"}</span>

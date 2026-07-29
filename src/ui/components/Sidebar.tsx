@@ -1,14 +1,15 @@
 /** Primary navigation. Pure presentation over the UI store. */
+import { HomeIcon, SearchIcon, LibraryIcon, PuzzleIcon, SettingsIcon, type LucideIcon } from "lucide-react";
 import { useUi, type View } from "../../app/store.js";
 import { cn } from "@/lib/utils";
 
 /** Shared by the desktop rail ({@link Sidebar}) and the mobile bar (`BottomNav`). */
-export const NAV: { view: View; icon: string; label: string }[] = [
-  { view: "home", icon: "◇", label: "Home" },
-  { view: "search", icon: "◎", label: "Search" },
-  { view: "library", icon: "▣", label: "Library" },
-  { view: "addons", icon: "◈", label: "Addons" },
-  { view: "settings", icon: "⚙", label: "Settings" },
+export const NAV: { view: View; icon: LucideIcon; label: string }[] = [
+  { view: "home", icon: HomeIcon, label: "Home" },
+  { view: "search", icon: SearchIcon, label: "Search" },
+  { view: "library", icon: LibraryIcon, label: "Library" },
+  { view: "addons", icon: PuzzleIcon, label: "Addons" },
+  { view: "settings", icon: SettingsIcon, label: "Settings" },
 ];
 
 /** The left rail — desktop only (the mobile shell swaps in `BottomNav`). */
@@ -40,9 +41,7 @@ export function Sidebar() {
                   : "text-chrome-muted hover:bg-secondary-hover hover:text-chrome-foreground",
               )}
             >
-              <span className="w-5 shrink-0 text-center" aria-hidden="true">
-                {item.icon}
-              </span>
+              <item.icon className="size-5 shrink-0" aria-hidden="true" />
               {item.label}
             </button>
           );

@@ -42,11 +42,18 @@ export function Vinyl({
   artwork,
   spinning,
   size = 420,
+  labelInset = "32%",
 }: {
   seed: string;
   artwork?: string | undefined;
   spinning: boolean;
   size?: number;
+  /**
+   * How far the label/artwork is inset from the disc edge. Smaller = a bigger
+   * cover and thinner groove band. The default keeps a generous groove ring for
+   * the large now-playing record; the tiny bar deck shrinks it so the art reads.
+   */
+  labelInset?: string;
 }) {
   const px = (fraction: number) => fraction * size;
   const shaftWidth = Math.max(3, px(0.016));
@@ -72,7 +79,7 @@ export function Vinyl({
         <div
           className="absolute overflow-hidden rounded-full border-2 border-border"
           style={{
-            inset: "32%",
+            inset: labelInset,
             background: artwork ? undefined : proceduralBackground(seed),
           }}
         >
